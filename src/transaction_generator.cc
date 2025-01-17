@@ -129,24 +129,21 @@ void SpmvTransactionGenerator::Initialize() { //여기는 코딩 끝
     kernel_execution_time_ = DRAF_BG_[max_index].size(); // ukernel_count_per_pim_
     std::cout << "Max # of rows: " << kernel_execution_time_ << std::endl;
     
-    
+    //Odd bank
     ukernel_spmv_[0]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
     ukernel_spmv_[1]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
-    ukernel_spmv_[2]=0b01001010000000001000000000000000;  // MOV(AAM0) L_IQ BANK
-    ukernel_spmv_[3]=0b01001100000000001000000000000000;  // MOV(AAM0) R_IQ BANK
-    ukernel_spmv_[4]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    ukernel_spmv_[5]=0b00010000000001000101000000001111;  // JUMP -2 7
-
-    ukernel_spmv_[6]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
-    ukernel_spmv_[7]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
-    ukernel_spmv_[8]=0b01001010000000001000000000000000;  // MOV(AAM0) L_IQ BANK
-    ukernel_spmv_[9]=0b01001100000000001000000000000000;  // MOV(AAM0) R_IQ BANK
-    ukernel_spmv_[10]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    ukernel_spmv_[11]=0b00010000000001000101000000001111;  // JUMP -2 7
-
+    ukernel_spmv_[2]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
+    ukernel_spmv_[3] = 0b00010000000001000000100000000111; // JUMP       -1        7
+    //ukernel_spmv_[3]=0b00010000000001000101000000001111;  // JUMP -2 7
+    //Even bank
+    ukernel_spmv_[4]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
+    ukernel_spmv_[5]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
+    ukernel_spmv_[6]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
+    ukernel_spmv_[7]=0b00010000000001000101000000001111;  // JUMP -2 7
+    //0b0001 0000 0000 0100 0101 0000 0000 1111
     // Exit
     // (TODO) MOV 명령어를 넣어 GRF에 있는 데이터를 위에 저장해 놓을지 결정
-    ukernel_spmv_[12]=0b00100000000000000000000000000000;  // EXIT
+    ukernel_spmv_[8]=0b00100000000000000000000000000000;  // EXIT
 }
 
 //Memory에 PIM연산을 위한 데이터를 저장하는 과정
@@ -212,10 +209,10 @@ void SpmvTransactionGenerator::SetData(){
 
     // Program μkernel into CRF register
     #ifdef debug_mode
-    std::cout << "\nHOST:\tProgram μkernel \n";
+    std::cout << "\nHOST:\tProgram SpMV μkernel \n";
     #endif
     for (int ch = 0; ch < NUM_CHANNEL; ch++) {
-        for (int co = 0; co < 4; co++) {
+        for (int co = 0; co < 2; co++) { //for (int co = 0; co < 1; co++) {
             Address addr(ch, 0, 0, 0, MAP_CRF, co);
             uint64_t hex_addr = ReverseAddressMapping(addr);
             TryAddTransaction(hex_addr, true, (uint8_t*)&ukernel_spmv_[co*8]);
@@ -242,7 +239,7 @@ void SpmvTransactionGenerator::Execute() {
             }
             //Barrier();
             #ifdef debug_mode
-            std::cout << "\nHOST:\tExecute μkernel 0-9\n";
+            std::cout << "\nHOST:\tExecute μkernel\n";
             #endif
             // Execute ukernel 0-1
             for (int co_i = 0; co_i < 8; co_i++) {

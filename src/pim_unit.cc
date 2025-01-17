@@ -450,7 +450,7 @@ void PimUnit::Execute() {
 // ADD를 일단 두긴 함
 // TW added
 void PimUnit::_SACC() {
-    std::cout << "PIMUnit::_SACC" << std::endl;
+    //std::cout << "PIMUnit::_SACC" << std::endl;
     for (int i = 0; i < UNITS_PER_WORD; i++) {
         half h_src0(*reinterpret_cast<half*>(&src0[i]));
         //아래는 SRF
