@@ -68,10 +68,10 @@ void processMtxFile(const std::string& inputFileName, const std::string& outputF
 
 int main() {
     std::vector<std::string> fileNames = {
-        "Stanford.mtx", "bcsstk13.mtx", "bcsstk32.mtx", "cant.mtx", "consph.mtx",
+        "Stanford.mtx", "G2_circuit.mtx", "bcsstk32.mtx", "cant.mtx", "consph.mtx",
         "crankseg_2.mtx", "ct20stif.mtx", "lhr71.mtx", "ohne2.mtx", "pdb1HYS.mtx",
         "pwtk.mtx", "rma10.mtx", "shipsec1.mtx", "soc-sign-epinions.mtx",
-        "sorted_consph.mtx", "webbase-1M.mtx", "xenon2.mtx"
+        "sorted_consph.mtx", "webbase-1M.mtx", "xenon2.mtx", "ASIC_100k.mtx"
     };
 
     for (const auto& fileName : fileNames) {

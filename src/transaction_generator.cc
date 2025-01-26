@@ -129,20 +129,27 @@ void SpmvTransactionGenerator::Initialize() { //여기는 코딩 끝
     kernel_execution_time_ = DRAF_BG_[max_index].size(); // ukernel_count_per_pim_
     std::cout << "Max # of rows: " << kernel_execution_time_ << std::endl;
     
-    //Odd bank
+    //Even bank
+    // 하나의 ROW가 process 됨
     ukernel_spmv_[0]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
     ukernel_spmv_[1]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
     ukernel_spmv_[2]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    ukernel_spmv_[3] = 0b00010000000001000000100000000111; // JUMP       -1        7
-    //ukernel_spmv_[3]=0b00010000000001000101000000001111;  // JUMP -2 7
-    //Even bank
-    ukernel_spmv_[4]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
-    ukernel_spmv_[5]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
-    ukernel_spmv_[6]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    ukernel_spmv_[7]=0b00010000000001000101000000001111;  // JUMP -2 7
-    //0b0001 0000 0000 0100 0101 0000 0000 1111
+    ukernel_spmv_[3]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
+    // (TODO) SACC를 두 번에 걸쳐 trigger하는 방법을 도입하는 것이 좋을까? -> 우선 그렇게 수정
+    ukernel_spmv_[4]= 0b0001000000000100000110000000110;  // JUMP -3 6
+    //ukernel_spmv_[3]=0b0001000000000100000100000000111;  // JUMP -2 7
+    //ukernel_spmv_[3]=0b00010000000001000000100000000111;  // JUMP -1 7
+
+    //Odd bank
+    // 하나의 ROW가 process 됨
+    ukernel_spmv_[5]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
+    ukernel_spmv_[6]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
+    ukernel_spmv_[7]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
+    ukernel_spmv_[8]= 0b0001000000000100000110000000110;  // JUMP -3 6
+    //ukernel_spmv_[7]=0b00010000000001000001000000000111;  // JUMP -2 7
+    //ukernel_spmv_[7]=0b00010000000001000000100000000111;  // JUMP -1 7
+
     // Exit
-    // (TODO) MOV 명령어를 넣어 GRF에 있는 데이터를 위에 저장해 놓을지 결정
     ukernel_spmv_[8]=0b00100000000000000000000000000000;  // EXIT
 }
 
@@ -223,41 +230,127 @@ void SpmvTransactionGenerator::SetData(){
 
 void SpmvTransactionGenerator::Execute() {
     // NUM_WORD_PER_ROW = 32
+    #ifdef debug_mode
+    std::cout << "HOST:\tkernel_execution_time: " << kernel_execution_time_ << std::endl;
+    #endif
+
     for (int ro = 0; ro < kernel_execution_time_; ro++) {
-        for (int co_o = 0; co_o < NUM_WORD_PER_ROW / 8; co_o++) {
             // NUM_WORD_PER_ROW = 32, co_o = 0, 1, 2, 3
             // Mode transition: AB -> AB-PIM
-            #ifdef debug_mode
-            std::cout << "HOST:\t[2] AB -> PIM \n";
-            #endif
-            *data_temp_ |= 1;
-            for (int ch = 0; ch < NUM_CHANNEL; ch++) {
-                //ch, rank, bankgroup, bank, row, column
-                Address addr(ch, 0, 0, 0, MAP_PIM_OP_MODE, 0); // MAP_PIM_OP_MODE = 0x3ffd
-                uint64_t hex_addr = ReverseAddressMapping(addr);
-                TryAddTransaction(hex_addr, true, data_temp_);
-            }
-            //Barrier();
-            #ifdef debug_mode
-            std::cout << "\nHOST:\tExecute μkernel\n";
-            #endif
-            // Execute ukernel 0-1
-            for (int co_i = 0; co_i < 8; co_i++) {
-                uint64_t co = co_o * 8 + co_i;
-                for (int ch = 0; ch < NUM_CHANNEL; ch++) {
-                    //channel, rank, bankgroup, bank, row, column
-                    Address addr(ch, 0, 0, EVEN_BANK, ro, co);
-                    uint64_t hex_addr = ReverseAddressMapping(addr);
-                    TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
-                }
-            }
-
+        #ifdef debug_mode
+        std::cout << "HOST:\t[2] AB -> PIM \n";
+        #endif
+        *data_temp_ |= 1;
+        for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+            //ch, rank, bankgroup, bank, row, column
+            Address addr(ch, 0, 0, 0, MAP_PIM_OP_MODE, 0); // MAP_PIM_OP_MODE = 0x3ffd
+            uint64_t hex_addr = ReverseAddressMapping(addr);
+            TryAddTransaction(hex_addr, true, data_temp_);
         }
-    }
-    
-    // ExecuteBank(EVEN_BANK);
-    // ExecuteBank(ODD_BANK); 
 
+        //Barrier();
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute μkernel\n";
+        #endif
+
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute Evenbank\n";
+        #endif
+
+        // Execute ukernel 0 (MOV 명령어)
+        for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+            uint64_t co = 29;
+            Address addr(ch, 0, 0, EVEN_BANK, ro, co); //Column 29 indicate vector
+            uint64_t hex_addr = ReverseAddressMapping(addr);
+            TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+        }
+
+        // Execute ukernel 1-4 (MUL, SACC, SACC, JUMP 명령어)
+        // (TODO) 다음과 같이 동작하도록 구성해야 됨
+        uint64_t sacc_offset = 7;
+        for (uint64_t co = 1; co < 8; co++) {
+            for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+                //channel, rank, bankgroup, bank, row, column
+                Address addr(ch, 0, 0, EVEN_BANK, ro, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                // 1. Transaction for trigger MUL
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                Address addr1(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset);
+                hex_addr = ReverseAddressMapping(addr1);
+                // 2. Transaction for trigger SACC
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                Address addr2(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset+1);
+                hex_addr = ReverseAddressMapping(addr2);
+                // 3. Transaction for trigger SACC
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                // 4. JUMP는 자동으로
+                sacc_offset++;
+            }
+        }
+
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute Oddbank\n";
+        #endif
+        
+        // Execute ukernel 0 (MOV 명령어)
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute μkernel 0\n";
+        #endif
+
+        for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+            uint64_t co = 29;
+            Address addr(ch, 0, 0, ODD_BANK, ro, co); //Column 29 indicate vector
+            uint64_t hex_addr = ReverseAddressMapping(addr);
+            TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+        }
+
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute μkernel 1-4\n";
+        #endif
+
+        // Execute ukernel 1-4 (MUL, SACC, SACC, JUMP 명령어)
+        // (TODO) 다음과 같이 동작하도록 구성해야 됨
+        sacc_offset = 7;
+        for (uint64_t co = 1; co < 8; co++) {
+            for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+                //channel, rank, bankgroup, bank, row, column
+                Address addr(ch, 0, 0, ODD_BANK, ro, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                // 1. Transaction for trigger MUL
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                Address addr1(ch, 0, 0, ODD_BANK, ro, co + sacc_offset);
+                hex_addr = ReverseAddressMapping(addr1);
+                // 2. Transaction for trigger SACC
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                Address addr2(ch, 0, 0, ODD_BANK, ro, co + sacc_offset+1);
+                hex_addr = ReverseAddressMapping(addr2);
+                // 3. Transaction for trigger SACC
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                // 4. JUMP는 자동으로
+                sacc_offset++;
+            }
+        }
+
+
+        // Global accumulator trigger 하기 위한 코드
+        // Shared accumulator 동작 검증 후 주석 풀고
+        // 동작 검증 필요 
+        /*
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute Global Accumulator\n";
+        #endif
+        for (int co_i = 0; co_i < 8; co_i++) {
+            uint64_t co = co_o * 8 + co_i;
+            for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+                //channel, rank, bankgroup, bank, row, column
+                Address addr(ch, 0, 0, EVEN_BANK, TRIGGER_GACC, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                TryAddTransaction(hex_addr, false, data_temp_);
+            }
+        }
+        */
+    }
     // 추가적으로 global accumulator를 위한 연산이 추가 되어야 함
 
     Barrier();

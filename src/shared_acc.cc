@@ -98,6 +98,9 @@ void SharedAccumulator::loadUnit(int index) {
 }
 
 void SharedAccumulator::runSimulation() {
+    #ifdef debug_mode
+    std::cout << "Shared Accumulator ID: " << SA_id << " starts simulation\n";
+    #endif
     while (!L_IQ.empty() || !R_IQ.empty()) {
         simulateStep();
     }}

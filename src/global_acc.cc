@@ -10,6 +10,9 @@ GlobalAccumulator::GlobalAccumulator(Config &config)
 }
 
 int GlobalAccumulator::StartAcc() {
+    #ifdef debug_mode
+    std::cout << "Triggering global accumulator\n";
+    #endif
     while (!IsAllQueueEmpty()) {
         simulate_step();
     }

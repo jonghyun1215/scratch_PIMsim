@@ -197,10 +197,8 @@ void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
         case PIM_OPERATION::NOP:
             CRF[CRF_idx].pim_op_type = PIM_OP_TYPE::CONTROL;
             //TW added
-            //NOP의 경우 굳이 BitToImm0, BitToImm1을 사용할 필요가 없을거 같은데
-            //왜 있는지 이해가 안됨 -> Multi cycle NOP을 위한 것으로 추정
-            //일단 block 해놓음
-            //CRF[CRF_idx].imm1 = BitToImm1(DataPtr);
+            //NOP를 몇번 반복할지에 대한 정보를 저장하기위해 imm1 사용
+            CRF[CRF_idx].imm1 = BitToImm1(DataPtr);
             break;
         case PIM_OPERATION::JUMP:
             CRF[CRF_idx].imm0 = CRF_idx + BitToImm0(DataPtr);

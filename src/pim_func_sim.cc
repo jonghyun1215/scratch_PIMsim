@@ -217,7 +217,11 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                 // 0x3ff9 = TRIGGER_GACC
                 else if (addr.row == 0x3ff9) {
                     if (DebugMode(hex_addr))
-                        std::cout << "Triggering global accumulaotr\n";
+                    {
+                        std::cout << "channel : " << addr.channel;
+                        std::cout << " Bank : " << addr.bank;
+                        std::cout << " Triggering global accumulator\n";
+                    }
                     //TW added
                     global_acc_[0]->StartAcc();
                     // 추후 global_acc_[1]도 추가할 수 있음
@@ -274,9 +278,13 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
             }
         } else if (addr.row == 0x3ff9) {
             if (DebugMode(hex_addr))
-                std::cout << "Triggering global accumulaotr\n";
+            {
+                std::cout << "channel : " << addr.channel;
+                std::cout << " Bank : " << addr.bank;
+                std::cout << " Triggering global accumulator\n";
+            }
             // TW added
-            //global_acc_[0]->StartAcc();
+            global_acc_[0]->StartAcc();
             // 추후 global_acc_[1]도 추가할 수 있음
             // global_acc_[1]->StartAcc();
             }     

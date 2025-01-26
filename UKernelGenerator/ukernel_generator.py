@@ -55,13 +55,6 @@ def src_code(word, loc):
         out = 0b011 << shifter
     elif "SRF_M" in word:
         out = 0b100 << shifter
-    # TW added
-    # To support move data from BANK to L_IQ & R_IQ
-    elif "L_IQ" in word:
-        out = 0b101 << shifter
-    elif "R_IQ" in word:
-        out = 0b110 << shifter
-    # TW added end
     else:
         idx_shifter = 11 - loc * 11
     
