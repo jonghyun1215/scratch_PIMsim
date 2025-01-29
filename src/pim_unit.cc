@@ -419,8 +419,12 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
         dst = bank_data_;
 
     // . set src0 address
-    if (CRF[PPC].src0 == PIM_OPERAND::BANK)
+    if (CRF[PPC].src0 == PIM_OPERAND::BANK){
         src0 = bank_data_;
+        if(CRF[PPC].PIM_OP == PIM_OPERATION::SACC){
+            std::cout << "SACC: PimUnit::SetOperandAddr: src0 is BANK" << std::endl;
+        }
+    }
 
     // . set src1 address only if PIM_OP_TYPE == ALU
     //   -> uses src1 for operand
