@@ -14,6 +14,8 @@ PimUnit::PimUnit(Config &config, int id)
     LC  = 0;  // Loop counter : A counter to perform NOP, JUMP Instructions
 
     // Initialize PIM Registers
+    // TW added
+    // unit_t = uint16_t
     GRF_A_ = (unit_t*) malloc(GRF_SIZE);
     GRF_B_ = (unit_t*) malloc(GRF_SIZE);
     SRF_A_ = (unit_t*) malloc(SRF_SIZE);
@@ -34,6 +36,7 @@ PimUnit::PimUnit(Config &config, int id)
     
     //TW added to support SACC
     enter_SACC = false;
+    bank_temp_ = (uint32_t*) malloc(WORD_SIZE);
 }
 
 void PimUnit::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
@@ -175,8 +178,6 @@ void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
         case PIM_OPERATION::MUL:
         case PIM_OPERATION::MAC:             
         case PIM_OPERATION::MAD:
-        //TW added
-        case PIM_OPERATION::SACC:
             CRF[CRF_idx].pim_op_type = PIM_OP_TYPE::ALU;
             CRF[CRF_idx].dst  = BitToDst(DataPtr);
             CRF[CRF_idx].src0 = BitToSrc0(DataPtr);
@@ -208,7 +209,14 @@ void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
         case PIM_OPERATION::EXIT:
             CRF[CRF_idx].pim_op_type = PIM_OP_TYPE::CONTROL;
             break;
-
+        //TW added
+        // MOV, FILL과 유사하게 구현
+        case PIM_OPERATION::SACC:
+            CRF[CRF_idx].pim_op_type = PIM_OP_TYPE::SHARED;
+            // src0이 BANK를 나타내기 위해 사용
+            CRF[CRF_idx].src0 = BitToSrc0(DataPtr);
+            CRF[CRF_idx].src0_idx = BitToSrc0Idx(DataPtr);
+            break;
         default:
             break;
     }
@@ -222,6 +230,7 @@ void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
 int PimUnit::AddTransaction(uint64_t hex_addr, bool is_write,
                             uint8_t* DataPtr) {
     // Read data from physical memory
+    // Read 명령어 도착시, PMEM에서 데이터를 읽어와서 bank_data_에 저장
     if (!is_write)
         memcpy(bank_data_ , pmemAddr_ + hex_addr, WORD_SIZE);
 
@@ -285,6 +294,12 @@ int PimUnit::AddTransaction(uint64_t hex_addr, bool is_write,
         PPC = 0;
 
         return EXIT_END;
+    }
+
+    //TW added to support SACC
+    if(CRF[PPC].PIM_OP == PIM_OPERATION::SACC){
+        enter_SACC = true;
+        return TRIGGER_SACC;
     }
 
     return 0;  // NORMAL_END
@@ -437,7 +452,8 @@ void PimUnit::Execute() {
         case PIM_OPERATION::FILL:
             _MOV();
             break;
-        case PIM_OPERATION::SACC:
+        // TW added
+        case PIM_OPERATION::SACC: //여기 진입 잘 하는 것 확인
             _SACC();
             break;
         default:
@@ -445,18 +461,14 @@ void PimUnit::Execute() {
     }
 }
 
-// ADD를 일단 두긴 함
 // TW added
 void PimUnit::_SACC() {
     //std::cout << "PIMUnit::_SACC" << std::endl;
     for (int i = 0; i < UNITS_PER_WORD; i++) {
-        half h_src0(*reinterpret_cast<half*>(&src0[i]));
-        //아래는 SRF
-        half h_src1(*reinterpret_cast<half*>(&src1[0]));
-        half h_dst = h_src0 + h_src1;
-        dst[i] = *reinterpret_cast<unit_t*>(&h_dst);
+        // bank_temp_에 데이터를 넣어 두었다가, sshared acc에서 사용
+        bank_temp_[i] = src0[i];
     }
-    enter_SACC = true;
+
 }
 
 void PimUnit::_ADD() {

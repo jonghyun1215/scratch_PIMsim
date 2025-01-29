@@ -88,6 +88,8 @@ class PimUnit {
     uint64_t pmemAddr_size_;
     unsigned int burstSize_;
 
+   uint32_t *bank_temp_;
+
  protected:
     Config &config_;
 };

@@ -46,9 +46,11 @@ void processMtxFile(const std::string& inputFileName, const std::string& outputF
         }
 
         // Ignore entries with value == 0
-        if (value != 0.0) {
-            data.emplace_back(row, col, value);
+        if (value == 0.0) {
+            data.emplace_back(row, col, 1.0);
         }
+		else
+			data.emplace_back(row, col, value);
     }
 
     // Sort by column-major order

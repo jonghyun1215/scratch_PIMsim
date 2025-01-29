@@ -136,21 +136,23 @@ void SpmvTransactionGenerator::Initialize() { //여기는 코딩 끝
     ukernel_spmv_[2]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
     ukernel_spmv_[3]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
     // (TODO) SACC를 두 번에 걸쳐 trigger하는 방법을 도입하는 것이 좋을까? -> 우선 그렇게 수정
-    ukernel_spmv_[4]= 0b0001000000000100000110000000110;  // JUMP -3 6
-    //ukernel_spmv_[3]=0b0001000000000100000100000000111;  // JUMP -2 7
-    //ukernel_spmv_[3]=0b00010000000001000000100000000111;  // JUMP -1 7
+    ukernel_spmv_[4]=0b00010000000001000001100000000110;  // JUMP -3 6
+    //ukernel_spmv_[3]=0b00010000000001000001000000000111;  // JUMP -2 7
+    ///ukernel_spmv_[3]=0b00010000000001000000100000000111;  // JUMP -1 7
 
     //Odd bank
     // 하나의 ROW가 process 됨
     ukernel_spmv_[5]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
     ukernel_spmv_[6]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
     ukernel_spmv_[7]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    ukernel_spmv_[8]= 0b0001000000000100000110000000110;  // JUMP -3 6
+    ukernel_spmv_[8]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
+    ukernel_spmv_[9]=0b00010000000001000001100000000110;  // JUMP -3 6
     //ukernel_spmv_[7]=0b00010000000001000001000000000111;  // JUMP -2 7
     //ukernel_spmv_[7]=0b00010000000001000000100000000111;  // JUMP -1 7
 
     // Exit
-    ukernel_spmv_[8]=0b00100000000000000000000000000000;  // EXIT
+    ukernel_spmv_[10]=0b00100000000000000000000000000000;  // EXIT
+
 }
 
 //Memory에 PIM연산을 위한 데이터를 저장하는 과정
@@ -219,7 +221,7 @@ void SpmvTransactionGenerator::SetData(){
     std::cout << "\nHOST:\tProgram SpMV μkernel \n";
     #endif
     for (int ch = 0; ch < NUM_CHANNEL; ch++) {
-        for (int co = 0; co < 2; co++) { //for (int co = 0; co < 1; co++) {
+        for (int co = 0; co < 3; co++) { //for (int co = 0; co < 1; co++) {
             Address addr(ch, 0, 0, 0, MAP_CRF, co);
             uint64_t hex_addr = ReverseAddressMapping(addr);
             TryAddTransaction(hex_addr, true, (uint8_t*)&ukernel_spmv_[co*8]);
@@ -287,6 +289,18 @@ void SpmvTransactionGenerator::Execute() {
                 sacc_offset++;
             }
         }
+        
+        // To trigger global accumulator
+        for (uint64_t co = 22; co < 29; co++) {
+            for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+                //channel, rank, bankgroup, bank, row, column
+                Address addr(ch, 0, 0, EVEN_BANK, TRIGGER_GACC, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                TryAddTransaction(hex_addr, false, data_temp_);
+            }
+        }
+
 
         #ifdef debug_mode
         std::cout << "\nHOST:\tExecute Oddbank\n";
@@ -296,7 +310,6 @@ void SpmvTransactionGenerator::Execute() {
         #ifdef debug_mode
         std::cout << "\nHOST:\tExecute μkernel 0\n";
         #endif
-
         for (int ch = 0; ch < NUM_CHANNEL; ch++) {
             uint64_t co = 29;
             Address addr(ch, 0, 0, ODD_BANK, ro, co); //Column 29 indicate vector
@@ -331,7 +344,16 @@ void SpmvTransactionGenerator::Execute() {
             }
         }
 
-
+        // To trigger global accumulator
+        for (uint64_t co = 22; co < 29; co++) {
+            for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+                //channel, rank, bankgroup, bank, row, column
+                Address addr(ch, 0, 0, ODD_BANK, TRIGGER_GACC, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                TryAddTransaction(hex_addr, false, data_temp_);
+            }
+        }
         // Global accumulator trigger 하기 위한 코드
         // Shared accumulator 동작 검증 후 주석 풀고
         // 동작 검증 필요 

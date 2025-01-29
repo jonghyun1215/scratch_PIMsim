@@ -36,7 +36,7 @@ public:
     SharedAccumulator(Config &config, int id, PimUnit& pim1, PimUnit& pim2);
 
     // Additional methods
-    void loadIndices(std::vector<int> L_indices, std::vector<int> R_indices);
+    void loadIndices(uint32_t *L_indices, uint32_t *R_indices);
     void simulateStep();
     void loadUnit(int index);
     void runSimulation();

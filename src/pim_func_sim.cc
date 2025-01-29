@@ -299,22 +299,32 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                 uint64_t tmp_hex_addr = ReverseAddressMapping(tmp_addr);
 
                 int pim_index = GetPimIndex(addr) + i/2;
+
+                //shared_acc에 물려있는 pim_unit에 access 할 수 있도록 수정
                 int ret = shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->AddTransaction(tmp_hex_addr,
                                                                is_write,
                                                                DataPtr);
                 // Tw added
                 // To trigger SACC, check if the previous PIM unit has finished
+                // (TODO) 비교하는 부분 수정 필요
                 if(pim_index > 0){
                     if (ret == TRIGGER_SACC) {
                         int pim_index_SACC = pim_index - 1;
-                        if (DebugMode(hex_addr))
-                            std::cout << " Pim_func_sim: Trigger SACC\n";
-                        if(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC == true \
-                            && shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC == true)
-                        {
-                            shared_acc_[pim_index/2]->runSimulation();
-                            shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC = false;
-                            shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;                     
+                        if(pim_index % 2 == 1){ //1,3,5,7... 만 연산할 수 있도록
+                            if(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC == true \
+                                && shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC == true)
+                            {
+                                if (DebugMode(hex_addr)){
+                                    std::cout << " Pim_func_sim: Trigger SACC\n";
+                                    std::cout << " Pim index : " << pim_index << " Pim index SACC : " << pim_index_SACC << "\n";
+                                }
+                                // Send data from DRAM to L_IQ, R_IQ
+                                shared_acc_[pim_index/2]->loadIndices(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_,
+                                                                    shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
+                                shared_acc_[pim_index/2]->runSimulation();
+                                shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC = false;
+                                shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;                     
+                            }
                         } 
                     }
                 }

@@ -21,11 +21,14 @@ SharedAccumulator::SharedAccumulator(Config &config, int id, PimUnit& pim1, PimU
 //MOV 명령어 시행시 DRAM row에서 데이터를 받아와야 함
 //이때, DRAM row에서 받아온 데이터를 Index Queue에 넣어주는 함수
 //L_indices와 R_indices는 각각 PimUnit 1과 연결된 Bansk PimUnit 2와 연결된 Bank에서 받아온 데이터
-void SharedAccumulator::loadIndices(std::vector<int> L_indices, std::vector<int> R_indices) {
-    for (size_t i = 0; i < L_indices.size(); i++) {
+void SharedAccumulator::loadIndices(uint32_t *L_indices, uint32_t *R_indices) {
+    std::cout << "Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
+    for (size_t i = 0; i < 8; i++) {
+        std::cout << "L_indices[" << i << "]: " << L_indices[i] << std::endl;
         L_IQ.push(Element(i,L_indices[i]));
     }
-    for (size_t i = 0; i < R_indices.size(); i++) {
+    for (size_t i = 0; i < 8 /*R_indices.size()*/; i++) {
+        std::cout << "R_indices[" << i << "]: " << R_indices[i] << std::endl;
         R_IQ.push(Element(i,R_indices[i]));
     }
 }
@@ -37,6 +40,7 @@ void SharedAccumulator::PrintClk(){
 }
 
 void SharedAccumulator::simulateStep() {
+
     if (!L_IQ.empty() && !R_IQ.empty()) {
         Element L_front = L_IQ.front();
         Element R_front = R_IQ.front();
@@ -76,20 +80,14 @@ void SharedAccumulator::simulateStep() {
 };*/
 
 void SharedAccumulator::loadUnit(int index) {
-    // Example: Load a value from DRAM using DRAMsim3 and add to accumulator
-    
-    
+    // Example: Load a value from GRF
     //uint64_t address = index * sizeof(int);  // Assuming an address mapping
     int data = 0;
 
     // Read data from GRF
     // Queue에서 받아온 정보를 기반으로, GRF의 index를 가져와야 됨
-    
-    if (index < 16) {
-        data = pim_unit_[0]->GRF_A_[index];
-    } else {
-        data = pim_unit_[1]->GRF_A_[index];
-    }
+    data = pim_unit_[0]->GRF_A_[index];
+    pim_unit_[1]->GRF_A_[index] = 0; //한쪽 데이터는 0으로 바꿔야 됨
 
     // Assume the index is directly mapped to an accumulator
     accumulators[index % 8] += data;
@@ -101,6 +99,9 @@ void SharedAccumulator::runSimulation() {
     #ifdef debug_mode
     std::cout << "Shared Accumulator ID: " << SA_id << " starts simulation\n";
     #endif
+    // Load index from DRAM bank
+    pim_unit_[0];
+    pim_unit_[1];
     while (!L_IQ.empty() || !R_IQ.empty()) {
         simulateStep();
     }}

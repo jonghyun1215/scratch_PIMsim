@@ -6,7 +6,22 @@ namespace dramsim3{
 GlobalAccumulator::GlobalAccumulator(Config &config)
     :config_(config)
 {
-    // 초기화 작업이 필요하다면 여기에 작성
+    // Initialize the queues
+    for (int i = 0; i < 16; i++) {
+        pair_queue_1[i] = std::queue<Pair>();
+    }
+    for (int i = 0; i < 8; i++) {
+        pair_queue_2[i] = std::queue<Pair>();
+    }
+    for (int i = 0; i < 4; i++) {
+        pair_queue_3[i] = std::queue<Pair>();
+    }
+    for (int i = 0; i < 2; i++) {
+        pair_queue_4[i] = std::queue<Pair>();
+    }
+    result_pair_queue = std::queue<Pair>();
+
+    // Initialize the accumulators
 }
 
 int GlobalAccumulator::StartAcc() {
@@ -76,7 +91,7 @@ void GlobalAccumulator::simulate_step() {
     process_queues(pair_queue_4[0], pair_queue_4[1], result_pair_queue);
 }
 
-void GlobalAccumulator::process_queues(std::queue<Pair>& LQ, std::queue<Pair>& RQ, std::queue<Pair>& result_queue) {
+void GlobalAccumulator::process_queues(std::queue<Pair>& LQ, std::queue<Pair>& RQ, std::queue<Pair>& next_queue) {
     if (!LQ.empty() && !RQ.empty()) {
         //Pair = Index + Data
         Pair LQ_front = LQ.front();
@@ -86,14 +101,14 @@ void GlobalAccumulator::process_queues(std::queue<Pair>& LQ, std::queue<Pair>& R
         Pair result = compare_and_add(LQ_front, RQ_front, should_add);
 
         if (should_add) {
-            result_queue.push(result); // 더한 결과를 큐에 추가
+            next_queue.push(result); // 더한 결과를 큐에 추가
             LQ.pop();
             RQ.pop();
         } else if (LQ_front.index == result.index) {
-            result_queue.push(result); // 그냥 pop 된 결과를 queue에 추가
+            next_queue.push(result); // 그냥 pop 된 결과를 queue에 추가
             RQ.pop();
         } else {
-            result_queue.push(result); // 그냥 pop 된 결과를 queue에 추가
+            next_queue.push(result); // 그냥 pop 된 결과를 queue에 추가
             LQ.pop();
         }
     }
