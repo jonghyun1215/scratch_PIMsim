@@ -12,6 +12,8 @@ release
 .idea
 *.pyc
 *.vh
+*.dat
+*.png
 .vs/
 sparse_suite/*.mtx
 sparse_suite/matplotlib-cpp/

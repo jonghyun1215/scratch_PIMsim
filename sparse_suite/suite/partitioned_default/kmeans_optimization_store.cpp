@@ -2,15 +2,15 @@
 using namespace std;
 
 /******************************************************************************
- * 1) .mtx (Matrix Market) 파일을 1-based 인덱스로 읽기
+ * 1) .mtx (Matrix Market) 파일을 1-based 인덱스로 읽기 (그대로 보존)
  ******************************************************************************/
 bool readMtxFile(const string& filename,
-                 int& numRows,
-                 int& numCols,
+                 int& numRows,  // 원본 행 개수 (1-based 최대치)
+                 int& numCols,  // 원본 열 개수 (1-based 최대치)
                  long long& nnz,
-                 vector<int>& rows,
-                 vector<int>& cols,
-                 vector<double>& vals)
+                 vector<int>& rows,  // 1-based row
+                 vector<int>& cols,  // 1-based col
+                 vector<double>& vals)// 값
 {
     ifstream fin(filename);
     if (!fin.is_open()) {
@@ -42,20 +42,21 @@ bool readMtxFile(const string& filename,
         }
     }
 
-    // (numRows, numCols, nnz) 읽기
+    // (numRows, numCols, nnz) 읽기 (1-based 활용)
     fin >> numRows >> numCols >> nnz;
     rows.reserve(nnz);
     cols.reserve(nnz);
     vals.reserve(nnz);
 
-    // (row, col, val) (1-based)로 저장
+    // (row, col, val) 그대로 (1-based) 저장
     for (long long i=0; i<nnz; i++){
-        int r,c;
+        int r,c; 
         double v;
         if (!(fin >> r >> c >> v)) {
             cerr<<"[ERROR] reading (row,col,val) failed at index "<< i <<"\n";
             return false;
         }
+        // 여기서 r, c를 줄이지 않음(그대로 1-based)
         rows.push_back(r);
         cols.push_back(c);
         vals.push_back(v);
@@ -65,29 +66,35 @@ bool readMtxFile(const string& filename,
 }
 
 /******************************************************************************
- * 2) 열(Column) 구조체
+ * 2) 열(Column) 구조체 (rowIndices: 이 열에 등장하는 row(1-based) 목록)
  ******************************************************************************/
 struct Column {
-    int colId;
-    vector<int> rowIndices;
-    int nnz;
+    int colId;          // 1-based 열 번호
+    vector<int> rowIndices; 
+    int nnz;            // rowIndices.size()
+    // features: K-means 클러스터링에 사용할 간단한 특성 벡터 (optional)
     vector<float> features;
 };
 
 /******************************************************************************
- * 3) row 분포 -> feature 벡터
+ * 3) row 분포 -> feature 벡터 (row가 1-based이지만 내부 계산은 편의상 0-based화 가능)
+ *    => 여기서는 rowMax 등 고려해 간단히 "seg = ceil(maxRow / dim)"
  ******************************************************************************/
 vector<float> computeFeatures(const vector<int>& rIdx, int maxRow, int dim){
+    // row가 1-based이므로, segSize = ceil(maxRow/dim)
+    // r-1을 써서 구간 인덱스 잡아도 되고, 단순히 (r-1)/segSize 사용 가능
+    // 여기서는 일단 (r-1)/segSize 방식
     vector<float> feats(dim, 0.0f);
     if(rIdx.empty()) return feats;
 
-    int segSize = (maxRow + dim - 1) / dim;
+    int segSize = (maxRow + dim - 1) / dim; // 단순 등분
     for(auto r : rIdx){
-        int idx = (r - 1) / segSize;
-        if(idx >= dim) idx = dim - 1;
+        // 1-based row -> 0-based로 변환시 (r-1)
+        int idx = (r-1) / segSize;
+        if(idx >= dim) idx = dim-1;
         feats[idx] += 1.0f;
     }
-    // L2 정규화
+    // L2정규화
     float norm = 0.0f;
     for(auto f : feats) norm += f*f;
     norm = sqrt(norm);
@@ -110,17 +117,18 @@ float distanceEuclid(const vector<float>& a, const vector<float>& b){
 }
 
 /******************************************************************************
- * 5) Min/Max Capacity K-means
+ * 5) "Min/Max Capacity" K-means (BoundedCapKMeans) - column 단위
+ *    => columns[c] 전체 rowIndices가 쪼개지지 않음
  ******************************************************************************/
 struct BoundedCapKMeans {
-    vector<Column>& cols;
+    vector<Column>& cols; // 열들 (각 열이 rowIndices를 갖음), 1-based colId
     int k;
     int maxIter;
-    long long minCap;
-    long long maxCap;
-    vector<int> assignments;
-    vector<long long> clusterNnz;
-    vector<vector<float>> centroids;
+    long long minCap;  // NNZ 최소 (열의 비제로 개수 합)
+    long long maxCap;  // NNZ 최대
+    vector<int> assignments;      // 열 c -> 어느 클러스터?
+    vector<long long> clusterNnz; // 각 클러스터 NNZ
+    vector<vector<float>> centroids; // 센트로이드(특징 벡터)
 
     BoundedCapKMeans(vector<Column>& c, int K, int iters,
                      long long minC, long long maxC)
@@ -131,6 +139,7 @@ struct BoundedCapKMeans {
         centroids.resize(k);
     }
 
+    // 임의 초기화
     void initCentroids() {
         srand((unsigned)time(NULL));
         for(int i=0; i<k; i++){
@@ -139,26 +148,6 @@ struct BoundedCapKMeans {
         }
         fill(clusterNnz.begin(), clusterNnz.end(), 0LL);
     }
-	/*void initCentroids() {
-    // 가장 NNZ가 많은 열을 기준으로 초기 중심점 설정
-    	vector<pair<int, int>> nnzWithIndex; // {nnz, column index}
-    	for (size_t i = 0; i < cols.size(); i++) {
-        	nnzWithIndex.push_back({cols[i].nnz, static_cast<int>(i)});
-    	}
-
-    	// NNZ 기준 내림차순 정렬
-    	sort(nnzWithIndex.rbegin(), nnzWithIndex.rend());
-
-		// 상위 k개의 열을 초기 중심점으로 선택
-		for (int i = 0; i < k; i++) {
-			int colIndex = nnzWithIndex[i].second;
-			centroids[i] = cols[colIndex].features;
-		}
-
-		// 클러스터 NNZ 초기화
-		fill(clusterNnz.begin(), clusterNnz.end(), 0LL);
-	}*/
-
 
     void run(){
         initCentroids();
@@ -181,11 +170,12 @@ struct BoundedCapKMeans {
             long long colNnz = cols[c].nnz;
             auto &feat = cols[c].features;
 
-            // minCap, maxCap 고려
+            // (1) minCap, maxCap
             for(int cl=0; cl<k; cl++){
                 long long future = newN[cl] + colNnz;
                 if(future <= maxCap){
                     float dist = distanceEuclid(feat, centroids[cl]);
+                    // minCap 미만이면 페널티 ↓
                     if(newN[cl] < minCap){
                         dist *= 0.5f;
                     }
@@ -195,19 +185,18 @@ struct BoundedCapKMeans {
                     }
                 }
             }
-            // 모든 클러스터가 maxCap 초과 => 가장 NNZ 적은 클러스터
+            // (2) 모두 maxCap 초과 => "가장 NNZ 적은" 클러스터 강제
             if(bestCluster<0){
-                int minIdx = 0;
+                int minIdx=0;
                 long long mn = newN[0];
                 for(int cl=1; cl<k; cl++){
                     if(newN[cl] < mn){
                         mn = newN[cl];
-                        minIdx = cl;
+                        minIdx= cl;
                     }
                 }
-                bestCluster = minIdx;
+                bestCluster= minIdx;
             }
-
             newA[c] = bestCluster;
             newN[bestCluster]+= colNnz;
 
@@ -220,12 +209,14 @@ struct BoundedCapKMeans {
     }
 
     void updateCentroids(){
+        // (cluster별) 특징벡터 합산
         vector<vector<float>> newC(k, vector<float>(centroids[0].size(), 0.0f));
         vector<int> count(k, 0);
 
         for(size_t c=0; c<cols.size(); c++){
             int cl = assignments[c];
             if(cl>=0 && cl<k){
+                // features 합산
                 auto &f = cols[c].features;
                 for(size_t d=0; d<f.size(); d++){
                     newC[cl][d]+= f[d];
@@ -233,18 +224,19 @@ struct BoundedCapKMeans {
                 count[cl]++;
             }
         }
+        // 평균
         for(int cl=0; cl<k; cl++){
             if(count[cl]>0){
                 for(size_t d=0; d<newC[cl].size(); d++){
                     newC[cl][d]/= float(count[cl]);
                 }
             } else {
-                // 비어있는 클러스터는 임의 할당
-                int r = rand() % cols.size();
+                // 비어있으면 임의 초기화
+                int r= rand()%cols.size();
                 newC[cl] = cols[r].features;
             }
         }
-        centroids = newC;
+        centroids= newC;
     }
 };
 
@@ -257,6 +249,7 @@ void balanceNNZRefinement(vector<Column>& cols,
                           int maxIter,
                           float distThreshold=0.2f)
 {
+    // 클러스터별 NNZ
     auto getClusterNnz=[&](int cl){
         long long s=0;
         for(size_t c=0; c<cols.size(); c++){
@@ -264,6 +257,7 @@ void balanceNNZRefinement(vector<Column>& cols,
         }
         return s;
     };
+    // 클러스터별 centroid
     auto getClusterCentroid=[&](int cl)->vector<float>{
         vector<float> cent(cols[0].features.size(), 0.0f);
         int count=0;
@@ -278,12 +272,13 @@ void balanceNNZRefinement(vector<Column>& cols,
         }
         if(count>0){
             for(auto &v: cent){
-                v /= float(count);
+                v/= float(count);
             }
         }
         return cent;
     };
 
+    // totalNnz
     long long totalNnz=0;
     for(auto &co: cols) totalNnz += co.nnz;
     long long ideal= (k>0)? (totalNnz/k) : 0;
@@ -292,86 +287,115 @@ void balanceNNZRefinement(vector<Column>& cols,
         vector<long long> cN(k);
         vector<vector<float>> cCent(k);
         for(int cl=0; cl<k; cl++){
-            cN[cl]   = getClusterNnz(cl);
-            cCent[cl]= getClusterCentroid(cl);
+            cN[cl] = getClusterNnz(cl);
+            cCent[cl] = getClusterCentroid(cl);
         }
-
         bool improved=false;
+
+        // "큰 -> 작은" 클러스터로 열 이동
         for(int big=0; big<k; big++){
-            if(cN[big] <= ideal) continue;
+            if(cN[big]<=ideal) continue;
             for(int small=0; small<k; small++){
-                if(cN[small] >= ideal) continue;
+                if(cN[small]>=ideal) continue;
                 if(big==small) continue;
 
+                // 후보 열
                 for(size_t c=0; c<cols.size(); c++){
-                    if(assignments[c]!=big) continue;
-                    float dCurr = distanceEuclid(cols[c].features, cCent[big]);
-                    float dNew  = distanceEuclid(cols[c].features, cCent[small]);
+                    if(assignments[c]!=big) continue; // big 클러스터 열만
+                    // 거리 차
+                    float dCurr= distanceEuclid(cols[c].features, cCent[big]);
+                    float dNew= distanceEuclid(cols[c].features, cCent[small]);
                     if(dNew - dCurr < distThreshold){
-                        long long nb = cN[big]   - cols[c].nnz;
-                        long long ns = cN[small] + cols[c].nnz;
+                        // NNZ 분산 개선?
+                        long long nb= cN[big] - cols[c].nnz;
+                        long long ns= cN[small]+ cols[c].nnz;
+
                         auto sq=[](long long x){return x*x;};
-                        long long oldErr = sq(cN[big]-ideal) + sq(cN[small]-ideal);
-                        long long newErr = sq(nb-ideal)      + sq(ns-ideal);
-                        if(newErr < oldErr){
-                            assignments[c] = small;
-                            cN[big]   = nb;
-                            cN[small] = ns;
-                            improved  = true;
+                        long long oldErr= sq(cN[big]-ideal)+sq(cN[small]-ideal);
+                        long long newErr= sq(nb-ideal)+sq(ns-ideal);
+                        if(newErr<oldErr){
+                            assignments[c]= small;
+                            cN[big]= nb;
+                            cN[small]= ns;
+                            improved= true;
                         }
                     }
                 }
             }
         }
+
         if(!improved) break;
     }
 }
 
 /******************************************************************************
  * 7) 파티션별 .mtx 저장
+ *    -> 원본의 (row, col, val)을 그대로 사용(1-based), 열 재매핑 없음
+ *    -> 하나의 column은 하나의 파티션에만 기록
  ******************************************************************************/
 void writePartitionsToMtx(const string& baseName,
                           int k,
                           const vector<int>& assignments,
-                          int numRows,
-                          int numCols,
-                          const vector<int>& rowIdx,
-                          const vector<int>& colIdx,
+                          int numRows, // 1-based 최대 행
+                          int numCols, // 1-based 최대 열
+                          const vector<int>& rowIdx, // 1-based
+                          const vector<int>& colIdx, // 1-based
                           const vector<double>& vals)
 {
+    // 파티션별로 .mtx 파일을 만들기
+    // part p => partition_p.mtx
+    // 이 때, row, col은 원본 그대로(1-based).
+    // "하나의 column"이 쪼개지지 않도록 => 이미 assignment에서 col단위로 결정.
+
+    // 파티션별 (row, col, val)을 수집하기 위해, 
+    //   rowIdx[i], colIdx[i], vals[i]를 보고 assignments[colIdx[i]-1]로 확인
+    //   (주의) colIdx는 1-based, assignments[]는 0-based index => colIdx[i]-1
+    // -> 만약 partition == p 이면, 해당 튜플을 p파일에 기록
+
+    // 임시로 파티션별 (row, col, val) 저장
     vector<vector<int>> partRows(k), partCols(k);
     vector<vector<double>> partVals(k);
 
+    // 또한, row, col의 최대값도 추적(헤더에 기록)
     vector<int> maxRow(k, 0);
     vector<int> maxCol(k, 0);
 
-    // (row, col, val) 파티션별 분배
     for(size_t i=0; i<rowIdx.size(); i++){
-        int r = rowIdx[i];
-        int c = colIdx[i];
+        int r = rowIdx[i];  // 1-based
+        int c = colIdx[i];  // 1-based
         double v = vals[i];
 
-        int part = assignments[c-1];
-        if(part<0 || part>=k) continue;
+        // 이 col이 어느 파티션?
+        int part = assignments[c-1]; 
+        // c-1 => columns vector index
+        // part => 0..k-1
+        if(part<0 || part>=k) {
+            // 만약 -1이거나 k 범위 밖이면 무시
+            continue;
+        }
 
         partRows[part].push_back(r);
         partCols[part].push_back(c);
         partVals[part].push_back(v);
 
-        maxRow[part] = max(maxRow[part], r);
-        maxCol[part] = max(maxCol[part], c);
+        if(r>maxRow[part]) maxRow[part]=r;
+        if(c>maxCol[part]) maxCol[part]=c;
     }
 
-    // 각 파티션에 대해 .mtx 파일로 저장
+    // 이제 각 파티션별로 파일 기록
     for(int p=0; p<k; p++){
         if(partRows[p].empty()){
             cerr<<"[INFO] partition "<<p<<" is empty => skip file\n";
             continue;
         }
-        long long pnnz = (long long)partRows[p].size();
+        // nnz
+        long long pnnz = partRows[p].size();
+
+        // 헤더용 row, col 크기
         int nRowsPart = maxRow[p];
         int nColsPart = maxCol[p];
 
+        // 파일명
         ostringstream oss;
         oss << baseName << "_" << p << ".mtx";
         string outF = oss.str();
@@ -382,185 +406,124 @@ void writePartitionsToMtx(const string& baseName,
             continue;
         }
 
+        // MatrixMarket 헤더
         fout<<"%%MatrixMarket matrix coordinate real general\n";
         fout<<"% partition "<<p<<", 1-based row,col\n";
-        fout<<nRowsPart<<" "<<nColsPart<<" "<<pnnz<<"\n";
+        fout<< nRowsPart <<" "<< nColsPart <<" "<< pnnz <<"\n";
 
+        // (row, col, val) 출력
         for(long long i=0; i<pnnz; i++){
-            fout << partRows[p][i] << " "
-                 << partCols[p][i] << " "
-                 << partVals[p][i] << "\n";
+            fout<< partRows[p][i] <<" "
+                 << partCols[p][i] <<" "
+                 << partVals[p][i] <<"\n";
         }
         fout.close();
 
-        /*cerr<<"[INFO] Wrote partition "<<p<<" => "<< outF
+        cerr<<"[INFO] Wrote partition "<<p<<" => "<< outF
             <<", #rows="<<nRowsPart
             <<", #cols="<<nColsPart
-            <<", nnz="<<pnnz<<"\n";*/
+            <<", nnz="<<pnnz<<"\n";
     }
 }
 
 /******************************************************************************
- * 8) 단일 .mtx 파일 처리 (경로 + 파일명)
+ * main
  ******************************************************************************/
-void processSingleMtx(const string &fullPath,
-                      int k, int kmIter, int balIter, float delta,
-                      const string &outRoot)
-{
-    // 1) read
+int main(int argc, char** argv){
+    ios::sync_with_stdio(false);
+    cin.tie(NULL);
+
+    if(argc<2){
+        cerr<<"Usage: "<<argv[0]<<" <original.mtx> [k=64] [kmeans_iter=10] [balance_iter=5] [delta=0.2] [outputBase=partition]\n";
+        cerr<<" => 1-based indexing, no column splitting\n";
+        return 1;
+    }
+
+    string inputFile= argv[1];
+    int k= (argc>=3)? stoi(argv[2]):64;
+    int kmIter= (argc>=4)? stoi(argv[3]):10;
+    int balIter= (argc>=5)? stoi(argv[4]):5;
+    float delta= (argc>=6)? stof(argv[5]): 0.2f;
+    string outBase= (argc>=7)? argv[6] : "partition";
+	outBase = "./partitioned_mtx/" + outBase;
+
+    // 1) 원본 .mtx 읽기 (1-based)
     int nRows=0, nCols=0;
     long long nnz=0;
-    vector<int> rowIdx, colIdx;
+    vector<int> rowIdx, colIdx;   // 모두 1-based로 저장
     vector<double> vals;
-
-    if(!readMtxFile(fullPath, nRows, nCols, nnz, rowIdx, colIdx, vals)){
-        cerr<<"[ERROR] fail read "<< fullPath <<"\n";
-        return;
+    if(!readMtxFile(inputFile, nRows, nCols, nnz, rowIdx, colIdx, vals)){
+        cerr<<"[ERROR] fail read original\n";
+        return 1;
     }
     cerr<<"[INFO] Original matrix: nRows="<<nRows
         <<", nCols="<<nCols
         <<", nnz="<<nnz<<"\n";
 
-    // 2) 열(Column) 구성
+    // 2) 열(Column) 구조 구성 (1-based)
+    //    => columns[c-1] 가 "col c"에 대응
     vector<Column> columns(nCols);
     for(int c=1; c<=nCols; c++){
-        columns[c-1].colId = c;
+        columns[c-1].colId = c; // 1-based
     }
+    // rowIndices
     for(long long i=0; i<nnz; i++){
-        int c = colIdx[i];
-        columns[c-1].rowIndices.push_back(rowIdx[i]);
+        int c = colIdx[i]; // 1-based
+        int r = rowIdx[i]; // 1-based
+        // columns[c-1].rowIndices.push_back(r)
+        columns[c-1].rowIndices.push_back(r);
     }
 
-    // 중복 제거 & nnz & feature
+    // 중복 제거, nnz, feature
     for(int c=0; c<nCols; c++){
         auto &ri= columns[c].rowIndices;
         sort(ri.begin(), ri.end());
         ri.erase(unique(ri.begin(), ri.end()), ri.end());
         columns[c].nnz = (int)ri.size();
     }
-    int featureDim = 32;
+    // features 계산
+    int featureDim=32;
     for(int c=0; c<nCols; c++){
         columns[c].features = computeFeatures(columns[c].rowIndices, nRows, featureDim);
     }
 
-    // cap 계산
+    // totalN
     long long totalN=0;
-    for(auto &col : columns) totalN += col.nnz;
+    for(auto &col : columns){
+        totalN += col.nnz;
+    }
     long long ideal= (k>0)? (totalN/k) : 0;
-    long long minCap= (long long)floor((double)ideal*(1.0 - delta));
+    long long minCap= (long long)floor(double(ideal)*(1.0-delta));
     if(minCap<0) minCap=0;
-    long long maxCap= (long long)ceil((double)ideal*(1.0 + delta));
+    long long maxCap= (long long)ceil(double(ideal)*(1.0+delta));
 
     cerr<<"[INFO] K="<<k
         <<", idealNNZ="<<ideal
         <<", minCap="<<minCap
         <<", maxCap="<<maxCap<<"\n";
 
-    // 3) 파티션 (KMeans + 후처리)
+    // 3) BoundedCapKMeans
     vector<int> assignments(nCols, 0);
     if(k>0){
         BoundedCapKMeans bcm(columns, k, kmIter, minCap, maxCap);
         bcm.run();
-        assignments = bcm.assignments;
 
+        assignments= bcm.assignments;
+
+        // 4) NNZ 균등화 후처리
         balanceNNZRefinement(columns, assignments, k, balIter);
+
+        // 5) 파티션 결과 출력
+        //    => (row, col, val) 모두 1-based로
+        writePartitionsToMtx(outBase, k, assignments,
+                             nRows, nCols,
+                             rowIdx, colIdx, vals);
+
     } else {
         cerr<<"[WARN] k=0 => no partition\n";
     }
 
-    // 4) 출력 경로 조합
-    //    outRoot = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/partitioned/"
-    //    => 최종: "/home/taewoon/second_drive/.../partitioned/<파일이름폴더>/partition"
-    //    여기서 <파일이름폴더> = "ASIC_100k_new" (확장자 .mtx 제거)
-    // fullPath: "/home/.../sorted_suite/ASIC_100k_new.mtx"
-    //  (1) 파일이름만 추출
-    size_t slashPos = fullPath.find_last_of("/\\");
-    string fileName = (slashPos == string::npos) ? fullPath : fullPath.substr(slashPos+1);
-
-    // (2) 확장자 .mtx 제거
-    size_t dotPos = fileName.find_last_of(".");
-    if(dotPos != string::npos){
-        fileName = fileName.substr(0, dotPos);
-    }
-
-    // (3) 최종 outBase
-    // 예: outRoot + "ASIC_100k_new" + "/partition"
-    //  => "/home/.../partitioned/ASIC_100k_new/partition"
-    ostringstream oss;
-    oss << outRoot << fileName << "/partition";
-    string outBase = oss.str();
-
-    // 5) 결과 저장
-    writePartitionsToMtx(outBase, k, assignments,
-                         nRows, nCols, rowIdx, colIdx, vals);
-
-    cerr<<"[INFO] Done processing "<< fullPath <<"\n\n";
-}
-
-/******************************************************************************
- * 9) main - 하드코딩된 mtx 파일 목록을 처리
- ******************************************************************************/
-int main(){
-    ios::sync_with_stdio(false);
-    cin.tie(NULL);
-
-    // -------------------------------
-    // 1) 파라미터
-    // -------------------------------
-    const int K = 64;
-    const int KM_ITER = 20;
-    const int BAL_ITER = 5;
-    const float DELTA = 0.2f;
-
-    // -------------------------------
-    // 2) 원본 .mtx 파일들이 있는 경로 + 파일명
-    // -------------------------------
-    const string basePath = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/sorted_suite/";
-
-    // 처리할 mtx 파일 목록
-    vector<string> mtxFiles = {
-        "crankseg_2_new.mtx",
-        "cant_new.mtx"
-    };
-    /*vector<string> mtxFiles = {
-        "ASIC_100k_new.mtx",
-        "Stanford_new.mtx",
-        "bcsstk32_new.mtx",
-        "consph_new.mtx",
-        "ct20stif_new.mtx",
-        "ohne2_new.mtx",
-        "pwtk_new.mtx",
-        "shipsec1_new.mtx",
-        "sorted_consph_new.mtx",
-        "xenon2_new.mtx",
-        "G2_circuit_new.mtx",
-        "cant_new.mtx",
-        "crankseg_2_new.mtx",
-        "lhr71_new.mtx",
-        "pdb1HYS_new.mtx",
-        "rma10_new.mtx",
-        "soc-sign-epinions_new.mtx",
-        "webbase-1M_new.mtx"
-    };*/
-
-    // -------------------------------
-    // 3) 결과를 저장할 폴더 (이미 존재한다고 가정)
-    // -------------------------------
-    const string outRoot = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/partitioned/";
-
-    // -------------------------------
-    // 4) 각 파일에 대해 처리
-    // -------------------------------
-    for(const auto &file : mtxFiles){
-        // 전체 경로
-        string fullPath = basePath + file;
-        cerr << "[INFO] Start processing: " << fullPath << "\n";
-
-        // 파티션 작업
-        processSingleMtx(fullPath, K, KM_ITER, BAL_ITER, DELTA, outRoot);
-    }
-
-    cerr<<"[INFO] All done.\n";
+    cerr<<"[INFO] Done.\n";
     return 0;
 }
 

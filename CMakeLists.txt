@@ -47,7 +47,7 @@ add_library(dramsim3 SHARED
 	src/pim_utils.cc #added from original DRAMsim3
 	src/global_acc.cc #TW added
 	src/shared_acc.cc
-	sparse_suite/tiling_sparse_suite.cc #TW added
+	sparse_suite/sw_full_stack.cc #TW added
 	#csc_partitioned/data_partition_csc.cc #TW added
 )
 

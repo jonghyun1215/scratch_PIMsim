@@ -40,9 +40,11 @@ void PimFuncSim::init(uint8_t* pmemAddr_, uint64_t pmemAddr_size_,
             << config_.channels << " channels\n";
     std::cout << "PimFuncSim initialized!\n";
 
-    // 수정 필요 pim unit init이 달라져야 됨
     for (int i=0; i< config_.channels * config_.banks / 2; i++) {
         pim_unit_[i]->init(pmemAddr, pmemAddr_size, burstSize);
+        if(i%2 == 0) {
+            shared_acc_[i/2]->init(pmemAddr, pmemAddr_size, burstSize);
+        }
     } 
     std::cout << "pim_units initialized!\n";
 }
@@ -83,21 +85,21 @@ bool PimFuncSim::DebugMode(uint64_t hex_addr) {
 //얘는 그냥 사용해도 됨
 bool PimFuncSim::ModeChanger(uint64_t hex_addr) {
     Address addr = config_.AddressMapping(hex_addr);
-    if (addr.row == 0x3fff) {
+    if (addr.row == 0x3fff) { // MAP_SBMR = 0x3fff
         if (bankmode[addr.channel] == "AB") {
             bankmode[addr.channel] = "SB";
         }
         if (DebugMode(hex_addr))
             std::cout << " Pim_func_sim: AB → SB mode change\n";
         return true;
-    } else if (addr.row == 0x3ffe) {
+    } else if (addr.row == 0x3ffe) { //MAP_ABMR = 0x3ffe
         if (bankmode[addr.channel] == "SB") {
             bankmode[addr.channel] = "AB";
         }
         if (DebugMode(hex_addr))
             std::cout << " Pim_func_sim: SB → AB mode change\n";
         return true;
-    } else if (addr.row == 0x3ffd) {
+    } else if (addr.row == 0x3ffd) { //MAP_PIM_OP_MODE = 0x3ffd
         PIM_OP_MODE[addr.channel] = true;
         if (DebugMode(hex_addr))
             std::cout << " Pim_func_sim: AB → PIM mode change\n";
@@ -131,6 +133,7 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
     uint64_t hex_addr = (*trans).addr;
     bool is_write = (*trans).is_write;
     uint8_t* DataPtr = (*trans).DataPtr;
+    //To print size of total DataPtr
     Address addr = config_.AddressMapping(hex_addr);
     (*trans).executed_bankmode = bankmode[addr.channel];
 
@@ -301,6 +304,8 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                 int pim_index = GetPimIndex(addr) + i/2;
 
                 //shared_acc에 물려있는 pim_unit에 access 할 수 있도록 수정
+                //trnasaction_generator.cc 에서 하나의 transaction을 보내도,
+                //여기서 even / odd 전체 bank에 대해서 transaction을 보냄
                 int ret = shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->AddTransaction(tmp_hex_addr,
                                                                is_write,
                                                                DataPtr);
@@ -308,25 +313,33 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                 // To trigger SACC, check if the previous PIM unit has finished
                 // (TODO) 비교하는 부분 수정 필요
                 if(pim_index > 0){
-                    if (ret == TRIGGER_SACC) {
-                        int pim_index_SACC = pim_index - 1;
-                        if(pim_index % 2 == 1){ //1,3,5,7... 만 연산할 수 있도록
-                            if(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC == true \
-                                && shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC == true)
-                            {
-                                if (DebugMode(hex_addr)){
-                                    std::cout << " Pim_func_sim: Trigger SACC\n";
-                                    std::cout << " Pim index : " << pim_index << " Pim index SACC : " << pim_index_SACC << "\n";
-                                }
-                                // Send data from DRAM to L_IQ, R_IQ
+                    int pim_index_SACC = pim_index - 1;
+                    if(pim_index % 2 == 1){ //1,3,5,7... 만 연산할 수 있도록
+                        if(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC == true \
+                            && shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC == true)
+                        {
+                            if (DebugMode(hex_addr)){
+                                std::cout << " Pim_func_sim: Trigger SACC\n";
+                                std::cout << " Pim index : " << pim_index << " Pim index SACC : " << pim_index_SACC << "\n";
+                            }
+                            // Send data from DRAM to L_IQ, R_IQ
+                            /////////////////TEST////////////////////////
+                            for (int i = 0; i < UNITS_PER_WORD / 2; i++) {
+                                std::cout << "L_IQ[" << i << "] : " << shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_[i] << std::endl;
+                                std::cout << "R_IQ[" << i << "] : " << shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_[i] << std::endl;
+                            }
+                            if(addr.column % 2 == 0){
                                 shared_acc_[pim_index/2]->loadIndices(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_,
                                                                     shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
-                                shared_acc_[pim_index/2]->runSimulation();
-                                shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC = false;
-                                shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;                     
                             }
-                        } 
-                    }
+                            else
+                                shared_acc_[pim_index/2]->loadIndices_2(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_,
+                                                                    shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
+                            //shared_acc_[pim_index/2]->runSimulation();
+                            shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC = false;
+                            shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;                     
+                        }
+                    } 
                 }
                 // Change bankmode to PIM → AB when programmed μkernel is
                 // finished and returns EXIT_END

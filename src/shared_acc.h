@@ -37,10 +37,14 @@ public:
 
     // Additional methods
     void loadIndices(uint32_t *L_indices, uint32_t *R_indices);
+    //새롭게 하위 8개의 index를 받아오기 위해 추가 됨
+    void loadIndices_2(uint32_t *L_indices, uint32_t *R_indices);
     void simulateStep();
     void loadUnit(int index);
     void runSimulation();
     void PrintClk();
+    void init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
+              unsigned int burstSize);
 
     // Additional member variables
     int SA_id;

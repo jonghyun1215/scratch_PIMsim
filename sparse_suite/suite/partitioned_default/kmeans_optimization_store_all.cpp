@@ -139,26 +139,6 @@ struct BoundedCapKMeans {
         }
         fill(clusterNnz.begin(), clusterNnz.end(), 0LL);
     }
-	/*void initCentroids() {
-    // 가장 NNZ가 많은 열을 기준으로 초기 중심점 설정
-    	vector<pair<int, int>> nnzWithIndex; // {nnz, column index}
-    	for (size_t i = 0; i < cols.size(); i++) {
-        	nnzWithIndex.push_back({cols[i].nnz, static_cast<int>(i)});
-    	}
-
-    	// NNZ 기준 내림차순 정렬
-    	sort(nnzWithIndex.rbegin(), nnzWithIndex.rend());
-
-		// 상위 k개의 열을 초기 중심점으로 선택
-		for (int i = 0; i < k; i++) {
-			int colIndex = nnzWithIndex[i].second;
-			centroids[i] = cols[colIndex].features;
-		}
-
-		// 클러스터 NNZ 초기화
-		fill(clusterNnz.begin(), clusterNnz.end(), 0LL);
-	}*/
-
 
     void run(){
         initCentroids();
@@ -508,7 +488,7 @@ int main(){
     // 1) 파라미터
     // -------------------------------
     const int K = 64;
-    const int KM_ITER = 20;
+    const int KM_ITER = 10;
     const int BAL_ITER = 5;
     const float DELTA = 0.2f;
 
@@ -519,10 +499,6 @@ int main(){
 
     // 처리할 mtx 파일 목록
     vector<string> mtxFiles = {
-        "crankseg_2_new.mtx",
-        "cant_new.mtx"
-    };
-    /*vector<string> mtxFiles = {
         "ASIC_100k_new.mtx",
         "Stanford_new.mtx",
         "bcsstk32_new.mtx",
@@ -541,7 +517,7 @@ int main(){
         "rma10_new.mtx",
         "soc-sign-epinions_new.mtx",
         "webbase-1M_new.mtx"
-    };*/
+    };
 
     // -------------------------------
     // 3) 결과를 저장할 폴더 (이미 존재한다고 가정)

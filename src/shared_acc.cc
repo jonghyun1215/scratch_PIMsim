@@ -17,24 +17,51 @@ SharedAccumulator::SharedAccumulator(Config &config, int id, PimUnit& pim1, PimU
     std::fill(std::begin(accumulators), std::end(accumulators), 0);
 }
 
+void SharedAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
+                   unsigned int burstSize) {
+    pmemAddr_ = pmemAddr;
+    pmemAddr_size_ = pmemAddr_size;
+    burstSize_ = burstSize;
+}
+
 //Index Queue에 데이터를 넣는 함수
 //MOV 명령어 시행시 DRAM row에서 데이터를 받아와야 함
 //이때, DRAM row에서 받아온 데이터를 Index Queue에 넣어주는 함수
 //L_indices와 R_indices는 각각 PimUnit 1과 연결된 Bansk PimUnit 2와 연결된 Bank에서 받아온 데이터
 void SharedAccumulator::loadIndices(uint32_t *L_indices, uint32_t *R_indices) {
-    std::cout << "Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
+    std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
     for (size_t i = 0; i < 8; i++) {
-        std::cout << "L_indices[" << i << "]: " << L_indices[i] << std::endl;
+        std::cout << " SA: L_indices[" << i << "]: " << L_indices[i]<<" ";
         L_IQ.push(Element(i,L_indices[i]));
     }
+    std::cout << std::endl;
     for (size_t i = 0; i < 8 /*R_indices.size()*/; i++) {
-        std::cout << "R_indices[" << i << "]: " << R_indices[i] << std::endl;
+        std::cout << "SA: R_indices[" << i << "]: " << R_indices[i] <<" ";
         R_IQ.push(Element(i,R_indices[i]));
     }
+    std::cout << "\n\n";
 }
 
-//PrintClk 함수는 몇 클럭이 소모 될지 출력하는 함수
+//Index Queue에 데이터를 넣는 함수2
+//위와 설명은 동일 BUT 두 번째 SACC 실행시 index가 0 ~ 7이 아닌 8 ~ 15로 들어와야 됨
+void SharedAccumulator::loadIndices_2(uint32_t *L_indices, uint32_t *R_indices) {
+    std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
+    for (size_t i = 8; i < 15; i++) {
+        //std::cout << " SA: L_indices[" << i << "]: " << L_indices[i-8]<<" ";
+        L_IQ.push(Element(i,L_indices[i]));
+    }
+    std::cout << std::endl;
+    for (size_t i = 8; i < 15 /*R_indices.size()*/; i++) {
+        //std::cout << "SA: R_indices[" << i << "]: " << R_indices[i-8] <<" ";
+        R_IQ.push(Element(i,R_indices[i]));
+    }
+    std::cout << "\n\n";
+}
+
+
+//Printx Clk 함수는 몇 클럭이 소모 될지 출력하는 함수
 //sa_clk는 Shared Accumulator의 클럭 수를 나타냄
+// (TODO) 아직 구현 X -> 일단은 필요 없어서 clk은 아직 안넣음
 void SharedAccumulator::PrintClk(){
     std::cout << "Shared Accumulator ID: " << SA_id << " takes " << sa_clk << " clocks" << std::endl;
 }
@@ -100,10 +127,11 @@ void SharedAccumulator::runSimulation() {
     std::cout << "Shared Accumulator ID: " << SA_id << " starts simulation\n";
     #endif
     // Load index from DRAM bank
-    pim_unit_[0];
-    pim_unit_[1];
+    //pim_unit_[0];
+    //pim_unit_[1];
     while (!L_IQ.empty() || !R_IQ.empty()) {
         simulateStep();
-    }}
-
+    }
+    std::cout << "Shared Accumulator ID: " << SA_id << " ends simulation\n";
+    }
 }  // namespace dramsim3

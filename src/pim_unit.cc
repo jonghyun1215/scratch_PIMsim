@@ -16,22 +16,26 @@ PimUnit::PimUnit(Config &config, int id)
     // Initialize PIM Registers
     // TW added
     // unit_t = uint16_t
-    GRF_A_ = (unit_t*) malloc(GRF_SIZE);
+    GRF_A_ = (unit_t*) malloc(GRF_SIZE); //256B = 32B * 8개
     GRF_B_ = (unit_t*) malloc(GRF_SIZE);
     SRF_A_ = (unit_t*) malloc(SRF_SIZE);
-    SRF_M_ = (unit_t*) malloc(SRF_SIZE);
+    SRF_M_ = (unit_t*) malloc(SRF_SIZE); //16B
     bank_data_ = (unit_t*) malloc(WORD_SIZE);
     dst = (unit_t*) malloc(WORD_SIZE);
 
     for (int i=0; i< WORD_SIZE / (int)sizeof(unit_t); i++) 
         dst[i] = 0;
     for (int i=0; i< GRF_SIZE / (int)sizeof(unit_t); i++) {
-        GRF_A_[i] = 0;
+        GRF_A_[i] = 0; //각 인덱스로 16Byte access 가능 한 것을 확인
         GRF_B_[i] = 0;
     }
+
+    // SRF_SIZE = 16B
+    // size of uint16_t = 2B
+    // i=0 ~ 8
     for (int i=0; i< SRF_SIZE / (int)sizeof(unit_t); i++) {
         SRF_A_[i] = 0;
-        SRF_M_[i] = 0;
+        SRF_M_[i] = 0; //8개의 데이터가 들어감
     }
     
     //TW added to support SACC
@@ -117,6 +121,15 @@ void PimUnit::PrintPIM_IST(PimInstruction inst) { //PIM Config.h 파일의 PIM_O
         }
         std::cout << "  ";
     }
+    //TW added
+    else if(inst.pim_op_type == (PIM_OP_TYPE)3) {  // SACC
+        PrintOperand((int)inst.src0);
+        if ((int)inst.src0 != 0) {
+            if (inst.is_aam == 0 || inst.is_src0_fix)  std::cout << "[" << inst.src0_idx << "]";
+            else std::cout << "(A)";
+        }
+        std::cout << "  ";
+    }
     std::cout << "\n";
 }
 
@@ -124,6 +137,7 @@ void PimUnit::PrintPIM_IST(PimInstruction inst) { //PIM Config.h 파일의 PIM_O
 //  Data in DataPtr will be 32-byte data
 //  Front 16-byte of DataPtr is written to SRF_A Register and
 //  next 16-byte of DataPtr is written to SRF_M Register
+//  외부에서 R/W로 SRF에 데이터를 쓰기 위해 구현된 함수
 void PimUnit::SetSrf(uint64_t hex_addr, uint8_t* DataPtr) {
     if (DebugMode()) std::cout << " PU: SetSrf\n";
     memcpy(SRF_A_, DataPtr, SRF_SIZE);
@@ -216,6 +230,7 @@ void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
             // src0이 BANK를 나타내기 위해 사용
             CRF[CRF_idx].src0 = BitToSrc0(DataPtr);
             CRF[CRF_idx].src0_idx = BitToSrc0Idx(DataPtr);
+            //std::cout << "CRF[CRF_idx].src0_idx : " << CRF[CRF_idx].src0_idx << std::endl;
             break;
         default:
             break;
@@ -227,12 +242,14 @@ void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
 }
 
 // Execute PIM_INSTRUCTIONS in CRF register and compute PIM
+// PIM Unit에서 자체적으로 데이터를 가져오기 위해 만들어진 함
 int PimUnit::AddTransaction(uint64_t hex_addr, bool is_write,
                             uint8_t* DataPtr) {
     // Read data from physical memory
     // Read 명령어 도착시, PMEM에서 데이터를 읽어와서 bank_data_에 저장
+    //hex_addr의 32B 데잍터를 bank_data_에 저장
     if (!is_write)
-        memcpy(bank_data_ , pmemAddr_ + hex_addr, WORD_SIZE);
+        memcpy(bank_data_ , pmemAddr_ + hex_addr, WORD_SIZE); 
 
     // Map operand data's offset to computation pointers properly
     SetOperandAddr(hex_addr);
@@ -248,6 +265,14 @@ int PimUnit::AddTransaction(uint64_t hex_addr, bool is_write,
         memcpy(pmemAddr_ + hex_addr, dst, WORD_SIZE);
     }
 
+    //TW added
+    // MOV를 이용하여, SRF를 채우는 경우
+    if (CRF[PPC].PIM_OP == PIM_OPERATION::MOV &&
+        CRF[PPC].dst == PIM_OPERAND::SRF_M) {
+        memcpy(SRF_M_, pmemAddr_ + hex_addr, SRF_SIZE);
+        memcpy(SRF_A_, pmemAddr_ + hex_addr + SRF_SIZE, SRF_SIZE);
+    }
+    
     // Point to next PIM_INSTRUCTION
     PPC += 1; //PPC= PIM Program Counter
 
@@ -296,12 +321,6 @@ int PimUnit::AddTransaction(uint64_t hex_addr, bool is_write,
         return EXIT_END;
     }
 
-    //TW added to support SACC
-    if(CRF[PPC].PIM_OP == PIM_OPERATION::SACC){
-        enter_SACC = true;
-        return TRIGGER_SACC;
-    }
-
     return 0;  // NORMAL_END
 }
 
@@ -311,10 +330,18 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
     // set _GRF_A, _GRF_B operand address when AAM mode
     Address addr = config_.AddressMapping(hex_addr);
     if (CRF[PPC].is_aam) { // Address Aligned Mode
-        int ADDR = addr.row * 32 + addr.column;
+        //ROW랑 COLUMN을 이용해서 AAM을 구현
+        int ADDR = addr.row * 32 + addr.column; //Column 0~31
         int dst_idx = int(ADDR / pow(2, CRF[PPC].dst_idx)) % 8;
         int src0_idx = int(ADDR / pow(2, CRF[PPC].src0_idx)) % 8;
         int src1_idx = int(ADDR / pow(2, CRF[PPC].src1_idx)) % 8;
+        /*
+        // TW added for debugging
+        if(CRF[PPC].PIM_OP == PIM_OPERATION::SACC){
+            if(dst_idx == src0_idx && dst_idx == src1_idx && src0_idx == src1_idx){
+                std::cout << "All idx are same\n";
+            }
+        }*/
         // std::cout << A_idx << " " << B_idx << " " << dst_idx << " " << src0_idx << " " << src1_idx << std::endl;
        
         // int CA = addr.column;
@@ -336,6 +363,20 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
                 dst = GRF_B_ + dst_idx * 16;
             }
         }
+        // TW added
+        // SRF_A, SRF_M의 경우에 대한 처리 필요
+        // 기존에는 GRF_A, GRF_B만 처리하고 있었음
+        // SRF_M 과 SRF_A는 16B 단위
+        // corrupted size vs. prev_size  에러 발생
+        /*else if(CRF[PPC].dst == PIM_OPERAND::SRF_M){
+            dst = SRF_M_ + dst_idx;
+            std::cout << "PU: SRF_M selected\n";
+        }
+        else if(CRF[PPC].dst == PIM_OPERAND::SRF_A){
+            dst = SRF_A_ + dst_idx;
+            std::cout << "PU: SRF_A selected\n";
+            exit(1);
+        } */
 
         // set src0 address (AAM) Address Aligned Mode
         if (CRF[PPC].src0 == PIM_OPERAND::GRF_A) {
@@ -355,6 +396,13 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
                 src0 = SRF_A_ + CRF[PPC].src0_idx * 16;
             } else {
                 src0 = SRF_A_ + src0_idx;
+            }
+        }
+        else if (CRF[PPC].src0 == PIM_OPERAND::SRF_M) {
+            if (CRF[PPC].is_src0_fix) {
+                src0 = SRF_M_ + CRF[PPC].src0_idx * 16;
+            } else {
+                src0 = SRF_M_ + src0_idx;
             }
         }
 
@@ -377,11 +425,22 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
             } else {
                 src1 = SRF_A_ + src1_idx;
             }
+        // (TODO) SRF_M의 경우에 대한 처리 필요
+        // 내 코드의 경우 src1이 fix 되지 않음
+        // 여기로만 들어가서 SOURCE OPERAND 로 사용
         } else if (CRF[PPC].src1 == PIM_OPERAND::SRF_M) {
-            if (CRF[PPC].is_src1_fix) { 
+            if (CRF[PPC].is_src1_fix) {
+                std::cout << "TEST\n";
                 src1 = SRF_M_ + CRF[PPC].src1_idx * 16;
             } else {
-                src1 = SRF_M_ + src1_idx;
+                //여기로만 들어감
+                // (TODO) src1_idx 값이 AA에 따라 변화 해버림
+                if(CRF[PPC].PIM_OP == PIM_OPERATION::MUL){
+                    src1 = SRF_M_ + src1_idx-1;
+                }
+                else{
+                    src1 = SRF_M_ + src1_idx;
+                }
             }
         }
     } else {      // set _GRF_A, _GRF_B operand address when non-AAM mode
@@ -398,6 +457,7 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
             src0 = GRF_B_ + CRF[PPC].src0_idx * 16;
         else if (CRF[PPC].src0 == PIM_OPERAND::SRF_A)
             src1 = SRF_A_ + CRF[PPC].src1_idx;
+        //TW added
 
         // set src1 address
         // PIM_OP == ADD, MUL, MAC, MAD -> uses src1 for operand
@@ -408,6 +468,7 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
                 src1 = GRF_B_ + CRF[PPC].src1_idx * 16;
             else if (CRF[PPC].src1 == PIM_OPERAND::SRF_A)
                 src1 = SRF_A_ + CRF[PPC].src1_idx;
+            // 여기로는 들어가지 않음
             else if (CRF[PPC].src1 == PIM_OPERAND::SRF_M)
                 src1 = SRF_M_ + CRF[PPC].src1_idx;
         }
@@ -415,15 +476,15 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
 
     // set BANK, operand address
     // . set dst address
-    if (CRF[PPC].dst == PIM_OPERAND::BANK)
+    if (CRF[PPC].dst == PIM_OPERAND::BANK){
         dst = bank_data_;
+        // (TODO) 여기를 통해 데이터가 들어갈 것이라고 예상 BUT 그러지 않음
+    }
 
     // . set src0 address
+    // MOV 명령어시 여기서 bank_data -> src0으로 데이터를 가져옴
     if (CRF[PPC].src0 == PIM_OPERAND::BANK){
         src0 = bank_data_;
-        if(CRF[PPC].PIM_OP == PIM_OPERATION::SACC){
-            std::cout << "SACC: PimUnit::SetOperandAddr: src0 is BANK" << std::endl;
-        }
     }
 
     // . set src1 address only if PIM_OP_TYPE == ALU
@@ -467,12 +528,15 @@ void PimUnit::Execute() {
 
 // TW added
 void PimUnit::_SACC() {
-    //std::cout << "PIMUnit::_SACC" << std::endl;
-    for (int i = 0; i < UNITS_PER_WORD; i++) {
-        // bank_temp_에 데이터를 넣어 두었다가, sshared acc에서 사용
-        bank_temp_[i] = src0[i];
+    //UNITS_PER_WORD = 1
+    for (int i = 0; i < UNITS_PER_WORD / 2; i++) {
+        //2개의 2바이트 데이터를 하나의 4바이트 데이터로 합침
+        //16 bit 두개를 합쳐 32 bit로 만들어줌
+        bank_temp_[i] = ((uint32_t)src0[2*i+1] << 16) | (uint32_t)src0[2*i];
+        std::cout << "TW PU ID: " << pim_id << " PU: bank_temp_[" << i << "]: " << bank_temp_[i] << std::endl;
     }
-
+    //TW added to support SACC
+    enter_SACC = true;
 }
 
 void PimUnit::_ADD() {
@@ -496,10 +560,8 @@ void PimUnit::_ADD() {
 
 void PimUnit::_MUL() {
     //std::cout << "PIMUnit::_MUL" << std::endl;
-    /*for (int i = 0; i < UNITS_PER_WORD; i++) {
-        dst[i] = src0[i] * src1[i];
-    }*/
-    if(CRF[PPC].src1 == PIM_OPERAND::SRF_M) {
+    // 아래는 기존의 코드
+    /*if(CRF[PPC].src1 == PIM_OPERAND::SRF_M) {
         for (int i = 0; i < UNITS_PER_WORD; i++) {  
             half h_src0(*reinterpret_cast<half*>(&src0[i]));
             //아래는 SRF_M에서 읽어옴
@@ -512,6 +574,28 @@ void PimUnit::_MUL() {
             half h_src0(*reinterpret_cast<half*>(&src0[i]));
             half h_src1(*reinterpret_cast<half*>(&src1[i]));
             half h_dst = h_src0 * h_src1;
+            dst[i] = *reinterpret_cast<unit_t*>(&h_dst);
+        }
+    }*/
+   // TW added
+   // unit_t 는 uint16_t, fp 16이나, 시뮬레이터에서는 uint16_t로 사용
+   if(CRF[PPC].src1 == PIM_OPERAND::SRF_M) {
+        // UNITES_PER_WORD = 16
+        for (int i = 0; i < UNITS_PER_WORD; i++) {  
+            unit_t h_src0(*reinterpret_cast<unit_t*>(&src0[i]));
+            //아래는 SRF_M에서 읽어옴
+            unit_t h_src1(*reinterpret_cast<unit_t*>(&src1[0]));
+            //if(h_src0 == 1 && h_src1 == 0)
+            //    std::cout<<"PU: h_src0[" <<i<< "]: " << h_src0 <<" h_src1(SRF_M): "<<h_src1<<std::endl;
+            unit_t h_dst = h_src0 * h_src1;
+            dst[i] = *reinterpret_cast<unit_t*>(&h_dst);
+        }
+    } else {
+        //std::cout << "ERROR: Selecting this operand is not supported\n";
+        for (int i = 0; i < UNITS_PER_WORD; i++) {
+            unit_t h_src0(*reinterpret_cast<unit_t*>(&src0[i]));
+            unit_t h_src1(*reinterpret_cast<unit_t*>(&src1[i]));
+            unit_t h_dst = h_src0 * h_src1;
             dst[i] = *reinterpret_cast<unit_t*>(&h_dst);
         }
     }
@@ -545,9 +629,25 @@ void PimUnit::_MAD() {
 
 void PimUnit::_MOV() {
     //std::cout << "(MOV) GRF_B[0]: " << (int)GRF_B_[0] << std::endl;
-    for (int i = 0; i < UNITS_PER_WORD; i++) {
-        //std::cout << i << ": " << dst[i] << " " << src0[i] << std::endl;
-        dst[i] = src0[i];
+    // UNITES_PER_WORD = 16
+    // SetSrf를 이용하면 32Byte 데이터가 SRF_A(8개), SRF_M(8개) 순서로 저장됨)
+    if(CRF[PPC].dst == PIM_OPERAND::SRF_M){
+        // UNITES_PER_WORD = 16
+        for (int i = 0; i < UNITS_PER_WORD; i++) {
+            if (i < UNITS_PER_WORD / 2) {
+                SRF_M_[i] = src0[i];
+            } else {
+                int t = i - UNITS_PER_WORD / 2;
+                SRF_A_[t] = src0[i];
+            }
+        }
+    }
+    else{
+        for (int i = 0; i < UNITS_PER_WORD; i++) {
+            // TW added to debug
+            //std::cout <<"MOV " <<i << ": " << dst[i] << " " << src0[i] << std::endl;
+            dst[i] = src0[i];
+        }
     }
 }
 

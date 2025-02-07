@@ -169,10 +169,13 @@ void SpmvTransactionGenerator::SetData(){
     std::cout << "HOST:\tSet input data...\n";
     #endif
 
+    //std::cout<<"DRAF_BG_.size() : "<<DRAF_BG_.size()<<std::endl;
     for (size_t i = 0; i < DRAF_BG_.size(); ++i) {
-    uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i]
-    uint32_t current_row = 0;     // Start row at 0 for each DRAF_BG[i]
-    uint32_t current_ch = i / 4;  // Increment ch after every 4 bg
+        //std::cout<<"DRAF_BG_["<<i<<"].size() : "<<DRAF_BG_[i].size()<<std::endl;
+        //i=0 ~ 63
+        uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i] //bg = 0, 1, 2, 3
+        uint32_t current_row = 0;     // Start row at 0 for each DRAF_BG[i]
+        uint32_t current_ch = i / 4;  // Increment ch after every 4 bg //ch = 0 ~ 15
 
         for (size_t j = 0; j < DRAF_BG_[i].size(); ++j) {
             uint32_t ba = j % 4;      // Bank cycles 0, 1, 2, 3
@@ -184,24 +187,82 @@ void SpmvTransactionGenerator::SetData(){
             uint32_t co = 0;          // Column (start of the row)
 
             // Construct the address
-            Address addr(current_ch, 0, bg, ba, ro, co);
+            //Address addr(current_ch, 0, bg, ba, ro, co);
 
             // Translate to physical address
-            uint64_t hex_addr = ReverseAddressMapping(addr);
+            //uint64_t hex_addr = ReverseAddressMapping(addr);
 
             // Flatten re_aligned_dram_format into uint8_t*
+            // 
             const re_aligned_dram_format& element = DRAF_BG_[i][j];
             const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&element);
-            size_t total_size = sizeof(re_aligned_dram_format);
-
+            //size_t total_size = sizeof(re_aligned_dram_format);
+            
+            // TW added
+            // To test for print the setting data
+            bool taewoon_debugg = false; //데이터는 정상적으로 쓰여지고 있는 것을 확인
+            int index_row = 0;
+            int index_vec = 0;
+            int index_val = 0;
+            
             for (co = 0; co < 32; co++) {
                 Address addr(current_ch, 0, bg, ba, ro, co);
-                hex_addr = ReverseAddressMapping(addr);
-                if(co <= 21 || co ==29)
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                if(co <= 21 || co ==29){
                     TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
+                    // (TODO) 여기 쓰이는 데이터가 맞는지 확인 필요
+                    if(taewoon_debugg){
+                        if(co == 0){ //Col = 0일 때는 32B 4B data 8개
+                            for (uint32_t test=0; test < 7; test++) { //SIZE_WORD = 32
+                                uint32_t value;
+                                memcpy(&value, data_ptr + test*4, sizeof(uint32_t));
+                                std::cout << "col index[" << test << "] = " <<  value << std::endl;
+                            }
+                        }
+                        else if(co >= 1 && co <= 7){
+                            for (uint32_t test=0; test < 16; test++) { //WORD_SIZE = 32
+                                uint16_t value;
+                                memcpy(&value, data_ptr + co * WORD_SIZE + test * 2, sizeof(uint16_t));
+                                std::cout << "Value[" << index_val << "] = " <<  value << std::endl;
+                                index_val++;
+                            }
+                        }
+                        else if(co >= 8 && co <= 21){
+                            //row index는 4Byte -> test = 0 ~ 7
+                            for (uint32_t test=0; test < 8; test++) { //WORD_SIZE = 32
+                                uint32_t value;
+                                memcpy(&value, data_ptr + co * WORD_SIZE + test * 4, sizeof(uint32_t));
+                                std::cout << "Row index[" << index_row << "] = " <<  value << std::endl;
+                                index_row++;
+                            }
+                        }
+                        else if(co == 29){
+                            for (uint32_t test=0; test < 7; test++) { //WORD_SIZE = 32
+                                uint16_t value;
+                                memcpy(&value, data_ptr + co * WORD_SIZE + test * 2, sizeof(uint16_t));
+                                std::cout << "Vector[" << index_vec << "] = " <<  value << std::endl;
+                                
+                                //추가적으로 MUL 연산할 때 값이 다르게 나오는 문제가 있어 해결 중
+                                uint32_t test_col;
+                                memcpy(&test_col, data_ptr + test*4, sizeof(uint32_t));
+                                if(value ==0 && test_col != 0){
+                                    std::cout <<" Only column is zero but value is not zero" << std::endl;
+                                }
+                                else if(value !=0 && test_col == 0){
+                                    std::cout <<" Only value is zero but column is not zero" << std::endl;
+                                }
+                                if(test == 0 && value != 0 && test_col == 0){
+                                    std::cout << "First value is not zero" << std::endl;
+                                }
+                                index_vec++;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+    //exit(1);
     std::cout << "SetData Done" << std::endl;
     Barrier();
 
@@ -249,8 +310,10 @@ void SpmvTransactionGenerator::Execute() {
             uint64_t hex_addr = ReverseAddressMapping(addr);
             TryAddTransaction(hex_addr, true, data_temp_);
         }
-
-        //Barrier();
+        // TW added
+        // Barrier가 있어야 될거 같아서 추가
+        Barrier();
+        
         #ifdef debug_mode
         std::cout << "\nHOST:\tExecute μkernel\n";
         #endif
@@ -277,11 +340,11 @@ void SpmvTransactionGenerator::Execute() {
                 uint64_t hex_addr = ReverseAddressMapping(addr);
                 // 1. Transaction for trigger MUL
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
-                Address addr1(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset);
+                Address addr1(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset); //8, 10...
                 hex_addr = ReverseAddressMapping(addr1);
                 // 2. Transaction for trigger SACC
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
-                Address addr2(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset+1);
+                Address addr2(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset+1); //9, 11...
                 hex_addr = ReverseAddressMapping(addr2);
                 // 3. Transaction for trigger SACC
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
@@ -373,7 +436,6 @@ void SpmvTransactionGenerator::Execute() {
         }
         */
     }
-    // 추가적으로 global accumulator를 위한 연산이 추가 되어야 함
 
     Barrier();
 }

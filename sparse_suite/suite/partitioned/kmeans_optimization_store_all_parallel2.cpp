@@ -1,4 +1,7 @@
 #include <bits/stdc++.h>
+#include <pthread.h>
+#include <cstdlib>
+#include <ctime>
 using namespace std;
 
 /******************************************************************************
@@ -50,7 +53,7 @@ bool readMtxFile(const string& filename,
 
     // (row, col, val) (1-based)로 저장
     for (long long i=0; i<nnz; i++){
-        int r,c;
+        int r, c;
         double v;
         if (!(fin >> r >> c >> v)) {
             cerr<<"[ERROR] reading (row,col,val) failed at index "<< i <<"\n";
@@ -131,6 +134,8 @@ struct BoundedCapKMeans {
         centroids.resize(k);
     }
 
+    // 각 스레드마다 실행되므로, srand() 호출이 각 스레드 내부에서 독립적으로 동작하지만,
+    // 가능하다면 C++11 random 라이브러리 등 스레드 안전한 난수 생성기를 사용하는 것이 좋습니다.
     void initCentroids() {
         srand((unsigned)time(NULL));
         for(int i=0; i<k; i++){
@@ -158,7 +163,6 @@ struct BoundedCapKMeans {
 		// 클러스터 NNZ 초기화
 		fill(clusterNnz.begin(), clusterNnz.end(), 0LL);
 	}*/
-
 
     void run(){
         initCentroids();
@@ -196,7 +200,7 @@ struct BoundedCapKMeans {
                 }
             }
             // 모든 클러스터가 maxCap 초과 => 가장 NNZ 적은 클러스터
-            if(bestCluster<0){
+            if(bestCluster < 0){
                 int minIdx = 0;
                 long long mn = newN[0];
                 for(int cl=1; cl<k; cl++){
@@ -209,9 +213,9 @@ struct BoundedCapKMeans {
             }
 
             newA[c] = bestCluster;
-            newN[bestCluster]+= colNnz;
+            newN[bestCluster] += colNnz;
 
-            if(bestCluster != assignments[c]) changed=true;
+            if(bestCluster != assignments[c]) changed = true;
         }
 
         assignments = newA;
@@ -228,15 +232,15 @@ struct BoundedCapKMeans {
             if(cl>=0 && cl<k){
                 auto &f = cols[c].features;
                 for(size_t d=0; d<f.size(); d++){
-                    newC[cl][d]+= f[d];
+                    newC[cl][d] += f[d];
                 }
                 count[cl]++;
             }
         }
         for(int cl=0; cl<k; cl++){
-            if(count[cl]>0){
+            if(count[cl] > 0){
                 for(size_t d=0; d<newC[cl].size(); d++){
-                    newC[cl][d]/= float(count[cl]);
+                    newC[cl][d] /= float(count[cl]);
                 }
             } else {
                 // 비어있는 클러스터는 임의 할당
@@ -255,28 +259,28 @@ void balanceNNZRefinement(vector<Column>& cols,
                           vector<int>& assignments,
                           int k,
                           int maxIter,
-                          float distThreshold=0.2f)
+                          float distThreshold = 0.2f)
 {
-    auto getClusterNnz=[&](int cl){
-        long long s=0;
+    auto getClusterNnz = [&](int cl) {
+        long long s = 0;
         for(size_t c=0; c<cols.size(); c++){
-            if(assignments[c]==cl) s+= cols[c].nnz;
+            if(assignments[c] == cl) s += cols[c].nnz;
         }
         return s;
     };
-    auto getClusterCentroid=[&](int cl)->vector<float>{
+    auto getClusterCentroid = [&](int cl) -> vector<float> {
         vector<float> cent(cols[0].features.size(), 0.0f);
-        int count=0;
+        int count = 0;
         for(size_t c=0; c<cols.size(); c++){
-            if(assignments[c]==cl){
+            if(assignments[c] == cl){
                 auto &f = cols[c].features;
                 for(size_t d=0; d<f.size(); d++){
-                    cent[d]+= f[d];
+                    cent[d] += f[d];
                 }
                 count++;
             }
         }
-        if(count>0){
+        if(count > 0){
             for(auto &v: cent){
                 v /= float(count);
             }
@@ -284,40 +288,40 @@ void balanceNNZRefinement(vector<Column>& cols,
         return cent;
     };
 
-    long long totalNnz=0;
+    long long totalNnz = 0;
     for(auto &co: cols) totalNnz += co.nnz;
-    long long ideal= (k>0)? (totalNnz/k) : 0;
+    long long ideal = (k > 0) ? (totalNnz/k) : 0;
 
     for(int iter=0; iter<maxIter; iter++){
         vector<long long> cN(k);
         vector<vector<float>> cCent(k);
         for(int cl=0; cl<k; cl++){
             cN[cl]   = getClusterNnz(cl);
-            cCent[cl]= getClusterCentroid(cl);
+            cCent[cl] = getClusterCentroid(cl);
         }
 
-        bool improved=false;
-        for(int big=0; big<k; big++){
+        bool improved = false;
+        for(int big = 0; big < k; big++){
             if(cN[big] <= ideal) continue;
-            for(int small=0; small<k; small++){
+            for(int small = 0; small < k; small++){
                 if(cN[small] >= ideal) continue;
-                if(big==small) continue;
+                if(big == small) continue;
 
-                for(size_t c=0; c<cols.size(); c++){
-                    if(assignments[c]!=big) continue;
+                for(size_t c = 0; c < cols.size(); c++){
+                    if(assignments[c] != big) continue;
                     float dCurr = distanceEuclid(cols[c].features, cCent[big]);
                     float dNew  = distanceEuclid(cols[c].features, cCent[small]);
                     if(dNew - dCurr < distThreshold){
-                        long long nb = cN[big]   - cols[c].nnz;
+                        long long nb = cN[big] - cols[c].nnz;
                         long long ns = cN[small] + cols[c].nnz;
-                        auto sq=[](long long x){return x*x;};
+                        auto sq = [](long long x){ return x*x; };
                         long long oldErr = sq(cN[big]-ideal) + sq(cN[small]-ideal);
-                        long long newErr = sq(nb-ideal)      + sq(ns-ideal);
+                        long long newErr = sq(nb-ideal) + sq(ns-ideal);
                         if(newErr < oldErr){
                             assignments[c] = small;
-                            cN[big]   = nb;
+                            cN[big] = nb;
                             cN[small] = ns;
-                            improved  = true;
+                            improved = true;
                         }
                     }
                 }
@@ -351,8 +355,8 @@ void writePartitionsToMtx(const string& baseName,
         int c = colIdx[i];
         double v = vals[i];
 
-        int part = assignments[c-1];
-        if(part<0 || part>=k) continue;
+        int part = assignments[c-1]; // c는 1-based index이므로 c-1 사용
+        if(part < 0 || part >= k) continue;
 
         partRows[part].push_back(r);
         partCols[part].push_back(c);
@@ -363,9 +367,9 @@ void writePartitionsToMtx(const string& baseName,
     }
 
     // 각 파티션에 대해 .mtx 파일로 저장
-    for(int p=0; p<k; p++){
+    for(int p = 0; p < k; p++){
         if(partRows[p].empty()){
-            cerr<<"[INFO] partition "<<p<<" is empty => skip file\n";
+            cerr << "[INFO] partition " << p << " is empty => skip file\n";
             continue;
         }
         long long pnnz = (long long)partRows[p].size();
@@ -378,25 +382,18 @@ void writePartitionsToMtx(const string& baseName,
 
         ofstream fout(outF);
         if(!fout.is_open()){
-            cerr<<"[ERROR] cannot open "<<outF<<"\n";
+            cerr << "[ERROR] cannot open " << outF << "\n";
             continue;
         }
 
-        fout<<"%%MatrixMarket matrix coordinate real general\n";
-        fout<<"% partition "<<p<<", 1-based row,col\n";
-        fout<<nRowsPart<<" "<<nColsPart<<" "<<pnnz<<"\n";
+        fout << "%%MatrixMarket matrix coordinate real general\n";
+        fout << "% partition " << p << ", 1-based row,col\n";
+        fout << nRowsPart << " " << nColsPart << " " << pnnz << "\n";
 
-        for(long long i=0; i<pnnz; i++){
-            fout << partRows[p][i] << " "
-                 << partCols[p][i] << " "
-                 << partVals[p][i] << "\n";
+        for(long long i = 0; i < pnnz; i++){
+            fout << partRows[p][i] << " " << partCols[p][i] << " " << partVals[p][i] << "\n";
         }
         fout.close();
-
-        /*cerr<<"[INFO] Wrote partition "<<p<<" => "<< outF
-            <<", #rows="<<nRowsPart
-            <<", #cols="<<nColsPart
-            <<", nnz="<<pnnz<<"\n";*/
     }
 }
 
@@ -407,85 +404,72 @@ void processSingleMtx(const string &fullPath,
                       int k, int kmIter, int balIter, float delta,
                       const string &outRoot)
 {
-    // 1) read
-    int nRows=0, nCols=0;
-    long long nnz=0;
+    // 1) 파일 읽기
+    int nRows = 0, nCols = 0;
+    long long nnz = 0;
     vector<int> rowIdx, colIdx;
     vector<double> vals;
 
     if(!readMtxFile(fullPath, nRows, nCols, nnz, rowIdx, colIdx, vals)){
-        cerr<<"[ERROR] fail read "<< fullPath <<"\n";
+        cerr << "[ERROR] fail read " << fullPath << "\n";
         return;
     }
-    cerr<<"[INFO] Original matrix: nRows="<<nRows
-        <<", nCols="<<nCols
-        <<", nnz="<<nnz<<"\n";
+    cerr << "[INFO] Original matrix: nRows=" << nRows
+         << ", nCols=" << nCols
+         << ", nnz=" << nnz << "\n";
 
     // 2) 열(Column) 구성
     vector<Column> columns(nCols);
-    for(int c=1; c<=nCols; c++){
+    for (int c = 1; c <= nCols; c++){
         columns[c-1].colId = c;
     }
-    for(long long i=0; i<nnz; i++){
+    for (long long i = 0; i < nnz; i++){
         int c = colIdx[i];
         columns[c-1].rowIndices.push_back(rowIdx[i]);
     }
-
-    // 중복 제거 & nnz & feature
-    for(int c=0; c<nCols; c++){
-        auto &ri= columns[c].rowIndices;
+    // 중복 제거 및 nnz, feature 계산
+    for (int c = 0; c < nCols; c++){
+        auto &ri = columns[c].rowIndices;
         sort(ri.begin(), ri.end());
         ri.erase(unique(ri.begin(), ri.end()), ri.end());
         columns[c].nnz = (int)ri.size();
     }
     int featureDim = 32;
-    for(int c=0; c<nCols; c++){
+    for (int c = 0; c < nCols; c++){
         columns[c].features = computeFeatures(columns[c].rowIndices, nRows, featureDim);
     }
 
     // cap 계산
-    long long totalN=0;
-    for(auto &col : columns) totalN += col.nnz;
-    long long ideal= (k>0)? (totalN/k) : 0;
-    long long minCap= (long long)floor((double)ideal*(1.0 - delta));
-    if(minCap<0) minCap=0;
-    long long maxCap= (long long)ceil((double)ideal*(1.0 + delta));
+    long long totalN = 0;
+    for (auto &col : columns) totalN += col.nnz;
+    long long ideal = (k > 0) ? (totalN / k) : 0;
+    long long minCap = (long long)floor((double)ideal * (1.0 - delta));
+    if(minCap < 0) minCap = 0;
+    long long maxCap = (long long)ceil((double)ideal * (1.0 + delta));
 
-    cerr<<"[INFO] K="<<k
-        <<", idealNNZ="<<ideal
-        <<", minCap="<<minCap
-        <<", maxCap="<<maxCap<<"\n";
+    cerr << "[INFO] K=" << k
+         << ", idealNNZ=" << ideal
+         << ", minCap=" << minCap
+         << ", maxCap=" << maxCap << "\n";
 
     // 3) 파티션 (KMeans + 후처리)
     vector<int> assignments(nCols, 0);
-    if(k>0){
+    if (k > 0) {
         BoundedCapKMeans bcm(columns, k, kmIter, minCap, maxCap);
         bcm.run();
         assignments = bcm.assignments;
-
         balanceNNZRefinement(columns, assignments, k, balIter);
     } else {
-        cerr<<"[WARN] k=0 => no partition\n";
+        cerr << "[WARN] k=0 => no partition\n";
     }
 
-    // 4) 출력 경로 조합
-    //    outRoot = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/partitioned/"
-    //    => 최종: "/home/taewoon/second_drive/.../partitioned/<파일이름폴더>/partition"
-    //    여기서 <파일이름폴더> = "ASIC_100k_new" (확장자 .mtx 제거)
-    // fullPath: "/home/.../sorted_suite/ASIC_100k_new.mtx"
-    //  (1) 파일이름만 추출
+    // 4) 출력 경로 조합: 파일 이름에서 확장자 제거
     size_t slashPos = fullPath.find_last_of("/\\");
     string fileName = (slashPos == string::npos) ? fullPath : fullPath.substr(slashPos+1);
-
-    // (2) 확장자 .mtx 제거
     size_t dotPos = fileName.find_last_of(".");
     if(dotPos != string::npos){
         fileName = fileName.substr(0, dotPos);
     }
-
-    // (3) 최종 outBase
-    // 예: outRoot + "ASIC_100k_new" + "/partition"
-    //  => "/home/.../partitioned/ASIC_100k_new/partition"
     ostringstream oss;
     oss << outRoot << fileName << "/partition";
     string outBase = oss.str();
@@ -494,16 +478,34 @@ void processSingleMtx(const string &fullPath,
     writePartitionsToMtx(outBase, k, assignments,
                          nRows, nCols, rowIdx, colIdx, vals);
 
-    cerr<<"[INFO] Done processing "<< fullPath <<"\n\n";
+    cerr << "[INFO] Done processing " << fullPath << "\n\n";
 }
 
 /******************************************************************************
- * 9) main - 하드코딩된 mtx 파일 목록을 처리
+ * ThreadData 구조체: 각 스레드에 전달할 인자들
+ ******************************************************************************/
+struct ThreadData {
+    string fullPath;
+    int K;
+    int KM_ITER;
+    int BAL_ITER;
+    float DELTA;
+    string outRoot;
+};
+
+/******************************************************************************
+ * 스레드에서 호출할 함수
+ ******************************************************************************/
+void* threadFunc(void* arg) {
+    ThreadData* data = static_cast<ThreadData*>(arg);
+    processSingleMtx(data->fullPath, data->K, data->KM_ITER, data->BAL_ITER, data->DELTA, data->outRoot);
+    return nullptr;
+}
+
+/******************************************************************************
+ * 9) main - 파일별로 스레드를 생성하여 처리
  ******************************************************************************/
 int main(){
-    ios::sync_with_stdio(false);
-    cin.tie(NULL);
-
     // -------------------------------
     // 1) 파라미터
     // -------------------------------
@@ -516,13 +518,7 @@ int main(){
     // 2) 원본 .mtx 파일들이 있는 경로 + 파일명
     // -------------------------------
     const string basePath = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/sorted_suite/";
-
-    // 처리할 mtx 파일 목록
     vector<string> mtxFiles = {
-        "crankseg_2_new.mtx",
-        "cant_new.mtx"
-    };
-    /*vector<string> mtxFiles = {
         "ASIC_100k_new.mtx",
         "Stanford_new.mtx",
         "bcsstk32_new.mtx",
@@ -541,26 +537,46 @@ int main(){
         "rma10_new.mtx",
         "soc-sign-epinions_new.mtx",
         "webbase-1M_new.mtx"
+    };
+    /*vector<string> mtxFiles = {
+        "crankseg_2_new.mtx",
+        "cant_new.mtx"
     };*/
 
     // -------------------------------
-    // 3) 결과를 저장할 폴더 (이미 존재한다고 가정)
+    // 3) 결과를 저장할 폴더 (미리 생성되어 있어야 함)
     // -------------------------------
     const string outRoot = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/partitioned/";
 
     // -------------------------------
-    // 4) 각 파일에 대해 처리
+    // 4) 각 파일에 대해 스레드를 생성
     // -------------------------------
-    for(const auto &file : mtxFiles){
-        // 전체 경로
-        string fullPath = basePath + file;
-        cerr << "[INFO] Start processing: " << fullPath << "\n";
+    int numThreads = mtxFiles.size();
+    vector<pthread_t> threads(numThreads);
+    vector<ThreadData> threadData(numThreads);
 
-        // 파티션 작업
-        processSingleMtx(fullPath, K, KM_ITER, BAL_ITER, DELTA, outRoot);
+    for (int i = 0; i < numThreads; i++){
+        threadData[i].fullPath = basePath + mtxFiles[i];
+        threadData[i].K = K;
+        threadData[i].KM_ITER = KM_ITER;
+        threadData[i].BAL_ITER = BAL_ITER;
+        threadData[i].DELTA = DELTA;
+        threadData[i].outRoot = outRoot;
+
+        cerr << "[INFO] Start processing: " << threadData[i].fullPath << "\n";
+        if(pthread_create(&threads[i], nullptr, threadFunc, &threadData[i]) != 0){
+            cerr << "[ERROR] Failed to create thread for " << mtxFiles[i] << "\n";
+            return 1;
+        }
     }
 
-    cerr<<"[INFO] All done.\n";
+    // 모든 스레드 종료 대기
+    for (int i = 0; i < numThreads; i++){
+        pthread_join(threads[i], nullptr);
+        cerr << "[INFO] " << mtxFiles[i] << " processing done!\n";
+    }
+
+    cerr << "[INFO] All done.\n";
     return 0;
 }
 
