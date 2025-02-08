@@ -323,19 +323,14 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                                 std::cout << " Pim index : " << pim_index << " Pim index SACC : " << pim_index_SACC << "\n";
                             }
                             // Send data from DRAM to L_IQ, R_IQ
-                            /////////////////TEST////////////////////////
-                            for (int i = 0; i < UNITS_PER_WORD / 2; i++) {
-                                std::cout << "L_IQ[" << i << "] : " << shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_[i] << std::endl;
-                                std::cout << "R_IQ[" << i << "] : " << shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_[i] << std::endl;
-                            }
                             if(addr.column % 2 == 0){
                                 shared_acc_[pim_index/2]->loadIndices(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_,
                                                                     shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
                             }
-                            else
+                            else //다음 index로 넘어가기 위해 두개의 함수를 구분
                                 shared_acc_[pim_index/2]->loadIndices_2(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_,
                                                                     shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
-                            //shared_acc_[pim_index/2]->runSimulation();
+                            shared_acc_[pim_index/2]->runSimulation();
                             shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC = false;
                             shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;                     
                         }

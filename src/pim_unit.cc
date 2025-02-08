@@ -533,7 +533,7 @@ void PimUnit::_SACC() {
         //2개의 2바이트 데이터를 하나의 4바이트 데이터로 합침
         //16 bit 두개를 합쳐 32 bit로 만들어줌
         bank_temp_[i] = ((uint32_t)src0[2*i+1] << 16) | (uint32_t)src0[2*i];
-        std::cout << "TW PU ID: " << pim_id << " PU: bank_temp_[" << i << "]: " << bank_temp_[i] << std::endl;
+        //std::cout << "TW PU ID: " << pim_id << " PU: bank_temp_[" << i << "]: " << bank_temp_[i] << std::endl;
     }
     //TW added to support SACC
     enter_SACC = true;

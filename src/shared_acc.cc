@@ -15,6 +15,8 @@ SharedAccumulator::SharedAccumulator(Config &config, int id, PimUnit& pim1, PimU
     pim_unit_.push_back(&pim2);
 
     std::fill(std::begin(accumulators), std::end(accumulators), 0);
+
+    sa_clk = 0;
 }
 
 void SharedAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
@@ -31,12 +33,12 @@ void SharedAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
 void SharedAccumulator::loadIndices(uint32_t *L_indices, uint32_t *R_indices) {
     std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
     for (size_t i = 0; i < 8; i++) {
-        std::cout << " SA: L_indices[" << i << "]: " << L_indices[i]<<" ";
+        //std::cout << " SA: L_indices[" << i << "]: " << L_indices[i]<<" ";
         L_IQ.push(Element(i,L_indices[i]));
     }
-    std::cout << std::endl;
+    //std::cout << std::endl;
     for (size_t i = 0; i < 8 /*R_indices.size()*/; i++) {
-        std::cout << "SA: R_indices[" << i << "]: " << R_indices[i] <<" ";
+        //std::cout << "SA: R_indices[" << i << "]: " << R_indices[i] <<" ";
         R_IQ.push(Element(i,R_indices[i]));
     }
     std::cout << "\n\n";
@@ -50,12 +52,12 @@ void SharedAccumulator::loadIndices_2(uint32_t *L_indices, uint32_t *R_indices) 
         //std::cout << " SA: L_indices[" << i << "]: " << L_indices[i-8]<<" ";
         L_IQ.push(Element(i,L_indices[i]));
     }
-    std::cout << std::endl;
+    //std::cout << std::endl;
     for (size_t i = 8; i < 15 /*R_indices.size()*/; i++) {
         //std::cout << "SA: R_indices[" << i << "]: " << R_indices[i-8] <<" ";
         R_IQ.push(Element(i,R_indices[i]));
     }
-    std::cout << "\n\n";
+    //std::cout << "\n\n";
 }
 
 
@@ -66,11 +68,19 @@ void SharedAccumulator::PrintClk(){
     std::cout << "Shared Accumulator ID: " << SA_id << " takes " << sa_clk << " clocks" << std::endl;
 }
 
-void SharedAccumulator::simulateStep() {
+void SharedAccumulator::PrintElement(Element element){
+    std::cout << "SA: Element Order: " << (uint32_t)element.order << " Value: " << element.value << std::endl;
+    std::cout << "SA: Elemetn value: " << element.value << std::endl;
+}
 
+void SharedAccumulator::simulateStep() {
     if (!L_IQ.empty() && !R_IQ.empty()) {
         Element L_front = L_IQ.front();
+        // TW added for debug
+        PrintElement(L_front);
         Element R_front = R_IQ.front();
+        // TW added for debug
+        PrintElement(R_front);
 
         if (L_front.value == R_front.value) {
             // Pop both queues
@@ -83,10 +93,12 @@ void SharedAccumulator::simulateStep() {
             loadUnit(L_front.order); //order는 GRF를 access하기 위해 generate 된 index
             loadUnit(R_front.order); //order는 GRF를 access하기 위해 generate 된 index
         } else if (L_front.value > R_front.value) {
+            //std::cout << "SA: MISS L is bigger than R\n";
             // Pop R_IQ
             R_IQ.pop();
             R_Q_pop_cnt++;
         } else {
+            //std::cout << "SA: MISS R is bigger than L\n";
             // Pop L_IQ
             L_IQ.pop();
             L_Q_pop_cnt++;
@@ -106,20 +118,24 @@ void SharedAccumulator::simulateStep() {
     Element(int o, int v) : order(o), value(v) {}
 };*/
 
+// Simulation 상 LoadUnit은 REG R/W unit과 Adder controller 쌍으로 구성
+// 두개의 역할을 loadunit이 처리
 void SharedAccumulator::loadUnit(int index) {
+
+    std::cout << "SA: SA ID: " << SA_id << " Index Same " << std::endl;
     // Example: Load a value from GRF
     //uint64_t address = index * sizeof(int);  // Assuming an address mapping
-    int data = 0;
+    uint16_t data_l = 0;
+    uint16_t data_r = 0;
 
     // Read data from GRF
     // Queue에서 받아온 정보를 기반으로, GRF의 index를 가져와야 됨
-    data = pim_unit_[0]->GRF_A_[index];
+    data_l = pim_unit_[0]->GRF_A_[index];
+    data_r = pim_unit_[1]->GRF_A_[index];
     pim_unit_[1]->GRF_A_[index] = 0; //한쪽 데이터는 0으로 바꿔야 됨
 
-    // Assume the index is directly mapped to an accumulator
-    accumulators[index % 8] += data;
-
-    // Signal the adder controller (not shown, assuming addition happens here)
+    // adder signal 및 더해서 다시
+    pim_unit_[0]->GRF_A_[index] = data_l + data_r;
 }
 
 void SharedAccumulator::runSimulation() {
@@ -129,8 +145,15 @@ void SharedAccumulator::runSimulation() {
     // Load index from DRAM bank
     //pim_unit_[0];
     //pim_unit_[1];
+    uint32_t loop = 0;
     while (!L_IQ.empty() || !R_IQ.empty()) {
+        std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
         simulateStep();
+        loop++;
+        if (loop > 100) {
+            std::cerr << "SA: Infinite loop detected\n";
+            exit(1);
+        }
     }
     std::cout << "Shared Accumulator ID: " << SA_id << " ends simulation\n";
     }

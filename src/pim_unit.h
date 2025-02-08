@@ -62,7 +62,6 @@ class PimUnit {
     void _MAD();
     void _MOV();
 
-    // TW added
     void _SACC();
     bool enter_SACC;
     // TW added end

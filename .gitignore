@@ -15,6 +15,7 @@ release
 *.dat
 *.png
 .vs/
+*log*.txt
 sparse_suite/*.mtx
 sparse_suite/matplotlib-cpp/
 *.mtx

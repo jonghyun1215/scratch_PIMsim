@@ -45,14 +45,20 @@ public:
     void PrintClk();
     void init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
               unsigned int burstSize);
+    void PrintElement(Element element);
+
 
     // Additional member variables
     int SA_id;
-    int sa_clk;
+    uint64_t sa_clk;
     int L_Q_pop_cnt;
     int R_Q_pop_cnt;
 
     std::vector<PimUnit*> pim_unit_; // Vector to store 2 PIM Units
+
+    uint8_t* pmemAddr_;
+    uint64_t pmemAddr_size_;
+    unsigned int burstSize_;
 
 protected:
     Config &config_;

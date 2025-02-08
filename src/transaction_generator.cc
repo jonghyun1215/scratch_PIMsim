@@ -126,7 +126,10 @@ void SpmvTransactionGenerator::Initialize() { //여기는 코딩 끝
             max_index = i;
         }
     }
-    kernel_execution_time_ = DRAF_BG_[max_index].size(); // ukernel_count_per_pim_
+
+    // 가장 많은 row를 차지하는 DRAF_BG를 찾아서 그것을 기준으로 ukernel_count_per_pim_를 결정
+    // 4를 나누는 것은 BG 기준으로 묶여 있기 때문에, 4등분이 이루어지는 것을 고려
+    kernel_execution_time_ = DRAF_BG_[max_index].size() / 4; // ukernel_count_per_pim_
     std::cout << "Max # of rows: " << kernel_execution_time_ << std::endl;
     
     //Even bank

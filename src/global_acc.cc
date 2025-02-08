@@ -3,6 +3,25 @@
 
 namespace dramsim3{
 
+void GlobalAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
+                   unsigned int burstSize) {
+    pmemAddr_ = pmemAddr;
+    pmemAddr_size_ = pmemAddr_size;
+    burstSize_ = burstSize;
+}
+
+// void 로 해도 상관 없을 듯
+// Bank 데이터를 한번에 읽어와야 되는 상황을 대비해 일단 만들어 놓음 BUT 
+// Channel level parallelism을 이용하는 경우라면 굳이...
+int GlobalAccumulator::AddTransaction(uint64_t hex_addr, bool is_write, uint8_t* DataPtr) {
+    // Add transaction to the memory system
+    // memory_system_.AddTransaction(hex_addr, is_write, DataPtr);
+    if(!is_write)
+        memcpy(bank_data_ , pmemAddr_ + hex_addr, WORD_SIZE); 
+    
+    return 0; 
+}
+
 GlobalAccumulator::GlobalAccumulator(Config &config)
     :config_(config)
 {
