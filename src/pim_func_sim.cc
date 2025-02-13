@@ -45,7 +45,8 @@ void PimFuncSim::init(uint8_t* pmemAddr_, uint64_t pmemAddr_size_,
         if(i%2 == 0) {
             shared_acc_[i/2]->init(pmemAddr, pmemAddr_size, burstSize);
         }
-    } 
+    }
+    global_acc_[0]->init(pmemAddr, pmemAddr_size, burstSize); 
     std::cout << "pim_units initialized!\n";
 }
 
@@ -324,13 +325,14 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                             }
                             // Send data from DRAM to L_IQ, R_IQ
                             if(addr.column % 2 == 0){
-                                shared_acc_[pim_index/2]->loadIndices(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_,
+                                //왼쪽 홀수, 오른쪽 짝수
+                                shared_acc_[pim_index/2]->loadIndices(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_, 
                                                                     shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
                             }
                             else //다음 index로 넘어가기 위해 두개의 함수를 구분
                                 shared_acc_[pim_index/2]->loadIndices_2(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->bank_temp_,
                                                                     shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
-                            shared_acc_[pim_index/2]->runSimulation();
+                            shared_acc_[pim_index/2]->runSimulation(hex_addr);
                             shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC = false;
                             shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;                     
                         }

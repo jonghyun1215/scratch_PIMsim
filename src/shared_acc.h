@@ -26,12 +26,10 @@ struct Element {
 
 // SharedAccumulator inherits from PimUnit
 class SharedAccumulator : public PimUnit {
-private:
+public:
     std::queue<Element> L_IQ;
     std::queue<Element> R_IQ;
-    int accumulators[8];  // Assuming 8 accumulators
 
-public:
     // Constructor
     SharedAccumulator(Config &config, int id, PimUnit& pim1, PimUnit& pim2);
 
@@ -40,13 +38,16 @@ public:
     //새롭게 하위 8개의 index를 받아오기 위해 추가 됨
     void loadIndices_2(uint32_t *L_indices, uint32_t *R_indices);
     void simulateStep();
-    void loadUnit(int index);
-    void runSimulation();
+    void loadUnit(int index_l, int index_r);
+    void runSimulation(uint64_t hex_addr);
     void PrintClk();
     void init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
               unsigned int burstSize);
     void PrintElement(Element element);
 
+    // DRAM bank로 부터 column data를 읽어오는 함수
+    void ReadColumn(uint64_t hex_addr);
+    uint64_t ReverseAddressMapping(Address& addr);
 
     // Additional member variables
     int SA_id;
@@ -59,6 +60,10 @@ public:
     uint8_t* pmemAddr_;
     uint64_t pmemAddr_size_;
     unsigned int burstSize_;
+    
+    uint32_t *column_data;
+    uint32_t column_index; 
+    uint32_t previous_column;
 
 protected:
     Config &config_;

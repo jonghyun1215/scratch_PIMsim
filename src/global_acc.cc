@@ -3,6 +3,8 @@
 
 namespace dramsim3{
 
+// Initialize에 추가적인 인자가 필요할 수 있음
+// 추후 고려
 void GlobalAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
                    unsigned int burstSize) {
     pmemAddr_ = pmemAddr;

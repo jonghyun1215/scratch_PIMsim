@@ -14,9 +14,10 @@ SharedAccumulator::SharedAccumulator(Config &config, int id, PimUnit& pim1, PimU
     pim_unit_.push_back(&pim1);
     pim_unit_.push_back(&pim2);
 
-    std::fill(std::begin(accumulators), std::end(accumulators), 0);
-
+    column_data = (uint32_t*) malloc(WORD_SIZE);
     sa_clk = 0;
+    column_index = 0;
+    previous_column = 0;
 }
 
 void SharedAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
@@ -24,6 +25,23 @@ void SharedAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
     pmemAddr_ = pmemAddr;
     pmemAddr_size_ = pmemAddr_size;
     burstSize_ = burstSize;
+}
+
+void SharedAccumulator::ReadColumn(uint64_t hex_addr) {
+    // col = 0 번이 matrix의 column 정보를 담고 있음
+    // (TODO) col = 0 에 대한 address mapping이 필요함
+    memcpy(column_data, pmemAddr_ + hex_addr, WORD_SIZE);
+}
+
+uint64_t SharedAccumulator::ReverseAddressMapping(Address& addr) {
+    uint64_t hex_addr = 0;
+    hex_addr += (uint64_t)addr.channel << config_.ch_pos;
+    hex_addr += (uint64_t)addr.rank << config_.ra_pos;
+    hex_addr += (uint64_t)addr.bankgroup << config_.bg_pos;
+    hex_addr += (uint64_t)addr.bank << config_.ba_pos;
+    hex_addr += (uint64_t)addr.row << config_.ro_pos;
+    hex_addr += (uint64_t)addr.column << config_.co_pos;
+    return hex_addr << config_.shift_bits;
 }
 
 //Index Queue에 데이터를 넣는 함수
@@ -55,7 +73,7 @@ void SharedAccumulator::loadIndices_2(uint32_t *L_indices, uint32_t *R_indices) 
     //std::cout << std::endl;
     for (size_t i = 8; i < 15 /*R_indices.size()*/; i++) {
         //std::cout << "SA: R_indices[" << i << "]: " << R_indices[i-8] <<" ";
-        R_IQ.push(Element(i,R_indices[i]));
+        R_IQ.push(Element(i,R_indices[i])); 
     }
     //std::cout << "\n\n";
 }
@@ -77,10 +95,10 @@ void SharedAccumulator::simulateStep() {
     if (!L_IQ.empty() && !R_IQ.empty()) {
         Element L_front = L_IQ.front();
         // TW added for debug
-        PrintElement(L_front);
+        //PrintElement(L_front);
         Element R_front = R_IQ.front();
         // TW added for debug
-        PrintElement(R_front);
+        //PrintElement(R_front);
 
         if (L_front.value == R_front.value) {
             // Pop both queues
@@ -90,8 +108,9 @@ void SharedAccumulator::simulateStep() {
             R_Q_pop_cnt++;
 
             // Signal load unit
-            loadUnit(L_front.order); //order는 GRF를 access하기 위해 generate 된 index
-            loadUnit(R_front.order); //order는 GRF를 access하기 위해 generate 된 index
+            loadUnit(L_front.order, R_front.order); //order는 GRF를 access하기 위해 generate 된 index
+            std::cout << "L_front.order : " << L_front.order << std::endl;
+            std::cout << "R_front.order : " << R_front.order << std::endl;
         } else if (L_front.value > R_front.value) {
             //std::cout << "SA: MISS L is bigger than R\n";
             // Pop R_IQ
@@ -120,7 +139,7 @@ void SharedAccumulator::simulateStep() {
 
 // Simulation 상 LoadUnit은 REG R/W unit과 Adder controller 쌍으로 구성
 // 두개의 역할을 loadunit이 처리
-void SharedAccumulator::loadUnit(int index) {
+void SharedAccumulator::loadUnit(int index_l, int index_r) {
 
     std::cout << "SA: SA ID: " << SA_id << " Index Same " << std::endl;
     // Example: Load a value from GRF
@@ -129,16 +148,16 @@ void SharedAccumulator::loadUnit(int index) {
     uint16_t data_r = 0;
 
     // Read data from GRF
-    // Queue에서 받아온 정보를 기반으로, GRF의 index를 가져와야 됨
-    data_l = pim_unit_[0]->GRF_A_[index];
-    data_r = pim_unit_[1]->GRF_A_[index];
-    pim_unit_[1]->GRF_A_[index] = 0; //한쪽 데이터는 0으로 바꿔야 됨
+    // Queue에서 받아온 정보를 기반으로, GRF의 index를 가져와야 됨)
+    data_l = pim_unit_[0]->GRF_A_[index_l];
+    data_r = pim_unit_[1]->GRF_A_[index_r];
+    pim_unit_[1]->GRF_A_[index_r] = 0; //한쪽 데이터는 0으로 바꿔야 됨
 
     // adder signal 및 더해서 다시
-    pim_unit_[0]->GRF_A_[index] = data_l + data_r;
+    pim_unit_[0]->GRF_A_[index_l] = data_l + data_r;
 }
 
-void SharedAccumulator::runSimulation() {
+void SharedAccumulator::runSimulation(uint64_t hex_addr) {
     #ifdef debug_mode
     std::cout << "Shared Accumulator ID: " << SA_id << " starts simulation\n";
     #endif
@@ -146,15 +165,56 @@ void SharedAccumulator::runSimulation() {
     //pim_unit_[0];
     //pim_unit_[1];
     uint32_t loop = 0;
+    // ReadColumn 함수를 통해 column data를 읽어와 다른 column 일 때는 queue에 있는 데이터를
+    // flush 하는 과정이 존재해야 됨
+    Address addr = config_.AddressMapping(hex_addr);
+    addr.column = 0;
+    uint64_t hex_addr_col = ReverseAddressMapping(addr);
+    std::cout <<"previous column : " << previous_column << " current column : " << column_data[column_index] << std::endl;
+    
+    if(column_index != 0 && previous_column != column_data[column_index]){
+        if(SA_id % 2 == 1){
+            std::cout<< "SA: SA ID: " << SA_id << " L_IQ is flushed\n";
+            while(!L_IQ.empty())
+                L_IQ.pop();
+        }
+        else{
+            std::cout<< "SA: SA ID: " << SA_id << " R_IQ is flushed\n";
+            while(!R_IQ.empty())
+                R_IQ.pop();
+        }
+    }
+    previous_column = column_data[column_index];
+    // Column 7개를 비교하기 위한 Index
+    if(column_index < 7){
+        column_index++;
+    }
+    else{
+        column_index = 0;
+    }
+
+    ReadColumn(hex_addr_col); //4B x 7개와 empty 4B 1개
+    for (int i = 0; i < 8; i++) {
+        std::cout << "column_data[" << i << "] : " << column_data[i] << std::endl;
+        if(column_data[7] != 0){
+            std::cerr << "SA: Column data is not empty\n";
+            exit(1);
+        }
+    }
     while (!L_IQ.empty() || !R_IQ.empty()) {
         std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
+        //과정이 끝나고 flush 가 필요
         simulateStep();
         loop++;
-        if (loop > 100) {
+        if(L_IQ.empty() || R_IQ.empty()){
+            break;
+        }
+        if (loop > 10000) {
             std::cerr << "SA: Infinite loop detected\n";
             exit(1);
         }
     }
+    std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
     std::cout << "Shared Accumulator ID: " << SA_id << " ends simulation\n";
     }
 }  // namespace dramsim3
