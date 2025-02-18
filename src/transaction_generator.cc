@@ -140,21 +140,23 @@ void SpmvTransactionGenerator::Initialize() { //여기는 코딩 끝
     ukernel_spmv_[3]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
     // (TODO) SACC를 두 번에 걸쳐 trigger하는 방법을 도입하는 것이 좋을까? -> 우선 그렇게 수정
     ukernel_spmv_[4]=0b00010000000001000001100000000110;  // JUMP -3 6
-    //ukernel_spmv_[3]=0b00010000000001000001000000000111;  // JUMP -2 7
-    ///ukernel_spmv_[3]=0b00010000000001000000100000000111;  // JUMP -1 7
+    //ukernel_spmv_[]=0b00010000000001000001000000000110;  // JUMP -2 6
+    //ukernel_spmv_[]=0b00010000000001000001000000000111;  // JUMP -2 7
+    //ukernel_spmv_[]=0b00010000000001000000100000000111;  // JUMP -1 7
+    ukernel_spmv_[5]=0b01000000010000001000000000000000;  // MOV(AAM0) BANK GRF_A
+    ukernel_spmv_[6]=0b00010000000001000000100000000110; //JUMP -1 6
 
     //Odd bank
     // 하나의 ROW가 process 됨
-    ukernel_spmv_[5]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
-    ukernel_spmv_[6]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
-    ukernel_spmv_[7]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    ukernel_spmv_[8]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    ukernel_spmv_[9]=0b00010000000001000001100000000110;  // JUMP -3 6
-    //ukernel_spmv_[7]=0b00010000000001000001000000000111;  // JUMP -2 7
-    //ukernel_spmv_[7]=0b00010000000001000000100000000111;  // JUMP -1 7
-
+    ukernel_spmv_[7]=0b01001000000000001000000000000000;  // MOV(AAM0) SRF_M BANK
+    ukernel_spmv_[8]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
+    ukernel_spmv_[9]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
+    ukernel_spmv_[10]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
+    ukernel_spmv_[11]=0b00010000000001000001100000000110;  // JUMP -3 6
+    ukernel_spmv_[12]=0b01000000010000001000000000000000;  // MOV(AAM0) BANK GRF_A
+    ukernel_spmv_[13]=0b00010000000001000000100000000110;  //JUMP -1 6
     // Exit
-    ukernel_spmv_[10]=0b00100000000000000000000000000000;  // EXIT
+    ukernel_spmv_[14]=0b00100000000000000000000000000000;  // EXIT
 
 }
 
@@ -355,9 +357,19 @@ void SpmvTransactionGenerator::Execute() {
                 sacc_offset++;
             }
         }
+        // (TODO) MOV(AAM0) BANK GRF_A를 추가해야 됨
+        // JUMP 로 MOV가 7번 수행 될 수 있게 JUMP -1 6로 설정
+        // column = 22 ~ 28
+        for(uint64_t co = 22; co < 29; co++){
+            for(int ch = 0; ch < NUM_CHANNEL; ch++){
+                Address addr(ch, 0, 0, EVEN_BANK, false, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(hex_addr, false, data_temp_);
+            }
+        }
         
         // To trigger global accumulator
-        for (uint64_t co = 22; co < 29; co++) {
+        /*for (uint64_t co = 22; co < 29; co++) {
             for (int ch = 0; ch < NUM_CHANNEL; ch++) {
                 //channel, rank, bankgroup, bank, row, column
                 Address addr(ch, 0, 0, EVEN_BANK, TRIGGER_GACC, co);
@@ -365,8 +377,7 @@ void SpmvTransactionGenerator::Execute() {
                 //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 TryAddTransaction(hex_addr, false, data_temp_);
             }
-        }
-
+        }*/
 
         #ifdef debug_mode
         std::cout << "\nHOST:\tExecute Oddbank\n";
@@ -407,6 +418,17 @@ void SpmvTransactionGenerator::Execute() {
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 // 4. JUMP는 자동으로
                 sacc_offset++;
+            }
+        }
+
+        // (TODO) MOV(AAM0) BANK GRF_A를 추가해야 됨
+        // JUMP 로 MOV가 7번 수행 될 수 있게 JUMP -1 6로 설정
+        // column = 22 ~ 28
+        for(uint64_t co = 22; co < 29; co++){
+            for(int ch = 0; ch < NUM_CHANNEL; ch++){
+                Address addr(ch, 0, 0, ODD_BANK, false, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(hex_addr, false, data_temp_);
             }
         }
 
@@ -505,7 +527,7 @@ void SpmvTransactionGenerator::CheckResult() {
 /////////CCC/////////CCCCC////PPP////////////////////UUU/////////UUU/////////
 //////////CCCCCCCCCCCCC///////PPP//////////////////////UUUU///UUUU///////////
 /////////////CCCCCCC//////////PPP/////////////////////////UUUUU//////////////
-///////////////////////////////////////////////////////////////////KKM//LHY//
+/////////////////////////////////////////////////////////////////////////////
 
 //여기 작성해야 됨 -> CPU가 실행했을 때 memory clock cycle을 측정해야 하기에 필요
 ////////////////////////////TW Added///////////////////////////////////////////
@@ -524,7 +546,18 @@ void CPUSpmvTransactionGenerator::Initialize() {
 }
 
 void CPUSpmvTransactionGenerator::Execute() {
-    for (uint32_t idx = 0; idx < nnz_; idx++) {
+    
+    //Changing column only
+    //Address addr(current_ch, 0, bg, ba, ro, co);
+    for(uint32_t co = 0; co< 32; co++){
+        Address addr(0, 0, 0, 0, 0, co);
+        uint64_t hex_addr = ReverseAddressMapping(addr);
+        TryAddTransaction(hex_addr, true, data_temp_);
+    }
+
+    Barrier();
+    
+    /*for (uint32_t idx = 0; idx < 1; idx++) {
         uint32_t row, col;
         uint16_t value;
 
@@ -557,7 +590,7 @@ void CPUSpmvTransactionGenerator::Execute() {
         TryAddTransaction(y_addr, true, data_temp_);
 
         Barrier(); // Ensure proper transaction order
-    }
+    }*/
 }
 ////////////////////////////TW Added end///////////////////////////////////////
 

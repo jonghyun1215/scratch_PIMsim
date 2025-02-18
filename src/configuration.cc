@@ -391,14 +391,17 @@ void Config::SetAddressMapping() {
     }
 
     //pos = position을 의미
+    // HBM2_4Gb_test.ini의 경우 RoRaCoBgBach로 되어 있음
     ch_pos = field_pos.at("ch");
     ra_pos = field_pos.at("ra");
     bg_pos = field_pos.at("bg");
     ba_pos = field_pos.at("ba");
     ro_pos = field_pos.at("ro");
     co_pos = field_pos.at("co");
-    std::cout << "Ra_pos " << ra_pos << " Ch_pos " << ch_pos << " Bg_pos " << bg_pos \
-    << " Ba_pos "<< ba_pos << " Ro_pos " << ro_pos << " Co_pos " << co_pos << std::endl; 
+
+    std::cout << "Ro_pos " << ro_pos << " Ra_pos " << ra_pos << " Co_pos " << co_pos \
+        << " Bg_pos "<< bg_pos << " Ba_pos " << ba_pos << " Ch_pos " << ch_pos << std::endl;
+
 
     ch_mask = (1 << field_widths.at("ch")) - 1;
     ra_mask = (1 << field_widths.at("ra")) - 1;

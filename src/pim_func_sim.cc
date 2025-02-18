@@ -21,6 +21,7 @@ PimFuncSim::PimFuncSim(Config &config)
     //우선 global accumulator는 하나만 선언
     //channel에서 input을 받아서 넘겨주는 방식
     //vecotr형으로 선언 되어 있기 때문에, 여러개의 global accumulator를 선언할 수 있음
+    // i도 넣어서, id를 표시해 줘야 됨
     global_acc_.push_back(new GlobalAccumulator(config_));
 }
 
@@ -143,7 +144,7 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
     if (is_mode_change)
         return;
 
-    if (PIM_OP_MODE[addr.channel] == false) { //PIM mode가 아닌 경우로 일단 이해함
+    if (PIM_OP_MODE[addr.channel] == false) { //PIM mode가 아닌 경우
         if (bankmode[addr.channel] == "SB") {
             // Execute transaction on SB(Single Bank) mode
             (*trans).executed_bankmode = "SB";

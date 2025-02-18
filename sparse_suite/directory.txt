@@ -1,0 +1,2 @@
+suite/partitioned 폴더: 안에 kmeans 기반의 SW optimization 및 생성된 new tiled mtx file들이 존재
+generate_DRAF.cc : SW optimziation mtx file들을 기반으로 draf_dat 폴더에, .dat 파일을 생성하여 저장

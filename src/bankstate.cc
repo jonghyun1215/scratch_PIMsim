@@ -100,6 +100,13 @@ void BankState::UpdateState(const Command& cmd) {
                 case CommandType::READ:
                 case CommandType::WRITE:
                     row_hit_count_++;
+                    // TW added
+                    // Global accumulator trigger를 위한 access를 하는 경우 무조건
+                    // Activate와 READ 두개가 수행되는 타이밍으로 일단 정의
+                    if(cmd.Row() == 0x3ff9)
+                    {
+                        open_row_ = -1;
+                    }
                     break;
                 case CommandType::READ_PRECHARGE:
                 case CommandType::WRITE_PRECHARGE:

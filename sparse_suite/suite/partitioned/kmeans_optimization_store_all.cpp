@@ -519,10 +519,6 @@ int main(){
 
     // 처리할 mtx 파일 목록
     vector<string> mtxFiles = {
-        "crankseg_2_new.mtx",
-        "cant_new.mtx"
-    };
-    /*vector<string> mtxFiles = {
         "ASIC_100k_new.mtx",
         "Stanford_new.mtx",
         "bcsstk32_new.mtx",
@@ -541,7 +537,7 @@ int main(){
         "rma10_new.mtx",
         "soc-sign-epinions_new.mtx",
         "webbase-1M_new.mtx"
-    };*/
+    };
 
     // -------------------------------
     // 3) 결과를 저장할 폴더 (이미 존재한다고 가정)

@@ -376,7 +376,7 @@ int main() {
         row_used = draf_result.size();
 
         std::cout << "DRAF memory usage: " << row_used * 1024 << "Byte used" << std::endl;
-        std::cout << "DRAF memory usage(except vec, buffer):" << (row_used * 736) << "Byte used\n" << std::endl;
+        std::cout << "DRAF memory usage(except buffer):" << (row_used * 736) << "Byte used\n" << std::endl;
         std::cout << "=======================================================" << std::endl;
     }
     

@@ -262,11 +262,14 @@ int PimUnit::AddTransaction(uint64_t hex_addr, bool is_write,
     // is executed, write to physcial memory
     if (CRF[PPC].PIM_OP == PIM_OPERATION::MOV &&
         CRF[PPC].dst == PIM_OPERAND::BANK) {
+        // 여기서 새롭게 추가한 MOV 명령어가 Bank에 32B 데이터를 씀
         memcpy(pmemAddr_ + hex_addr, dst, WORD_SIZE);
     }
 
     //TW added
     // MOV를 이용하여, SRF를 채우는 경우
+    // 기존에는 지원하지 않았음
+    // 상위 16B는 SRF_M에, 하위 16B는 SRF_A에 저장
     if (CRF[PPC].PIM_OP == PIM_OPERATION::MOV &&
         CRF[PPC].dst == PIM_OPERAND::SRF_M) {
         memcpy(SRF_M_, pmemAddr_ + hex_addr, SRF_SIZE);
@@ -335,6 +338,27 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
         int dst_idx = int(ADDR / pow(2, CRF[PPC].dst_idx)) % 8;
         int src0_idx = int(ADDR / pow(2, CRF[PPC].src0_idx)) % 8;
         int src1_idx = int(ADDR / pow(2, CRF[PPC].src1_idx)) % 8;
+        
+        // TW added
+        // HARD CODED
+        // SACC 명령이 있을 경우 MOV를 이용하여 GRF_A에서 BANK로 넘어가는 명령어가 있는 경우
+        // src0_idx를 강제적으로 맞춰줌
+        bool SACC_flag = false;
+        for (int i=0;i<31;i++)
+        {
+            if (CRF[i].PIM_OP == PIM_OPERATION::SACC)
+            {
+                SACC_flag = true;
+                break;
+            }
+        }
+        if (CRF[PPC].PIM_OP == PIM_OPERATION::MOV && SACC_flag)
+        {
+            src0_idx += 2;
+            src0_idx = src0_idx % 8;
+        }
+        // TW hard coded end
+
         /*
         // TW added for debugging
         if(CRF[PPC].PIM_OP == PIM_OPERATION::SACC){
@@ -379,11 +403,16 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
         } */
 
         // set src0 address (AAM) Address Aligned Mode
+        // (TODO) GRF_A에서 BANK로 잘 들어가는지 확인 필요
         if (CRF[PPC].src0 == PIM_OPERAND::GRF_A) {
             if (CRF[PPC].is_src0_fix) { 
                 src0 = GRF_A_ + CRF[PPC].src0_idx * 16;
             } else {
+                // 새롭게 추가된 MOV의 경우 여기를 통해 들어감 -> 잘 들어가는 것 확인
+                //if(CRF[PPC].PIM_OP == PIM_OPERATION::MOV)
+                //    std::cout << "MOV TEST2: src0_idx = " << src0_idx << "PU id = " << pim_id << std::endl;
                 src0 = GRF_A_ + src0_idx * 16; 
+
             }
         } else if (CRF[PPC].src0 == PIM_OPERAND::GRF_B) {
             if (CRF[PPC].is_src0_fix) {
@@ -430,7 +459,7 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
         // 여기로만 들어가서 SOURCE OPERAND 로 사용
         } else if (CRF[PPC].src1 == PIM_OPERAND::SRF_M) {
             if (CRF[PPC].is_src1_fix) {
-                std::cout << "TEST\n";
+                //std::cout << "TEST\n";
                 src1 = SRF_M_ + CRF[PPC].src1_idx * 16;
             } else {
                 //여기로만 들어감
@@ -479,6 +508,7 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
     if (CRF[PPC].dst == PIM_OPERAND::BANK){
         dst = bank_data_;
         // (TODO) 여기를 통해 데이터가 들어갈 것이라고 예상 BUT 그러지 않음
+        // MOV 명령어로 MOV BANK GRF_A를 할 경우 여기도 데이터가 들어감
     }
 
     // . set src0 address
@@ -646,7 +676,7 @@ void PimUnit::_MOV() {
         for (int i = 0; i < UNITS_PER_WORD; i++) {
             // TW added to debug
             //std::cout <<"MOV " <<i << ": " << dst[i] << " " << src0[i] << std::endl;
-            dst[i] = src0[i];
+            dst[i] = src0[i]; //32B data가 이동 0~15 * 2B
         }
     }
 }

@@ -51,7 +51,7 @@ public:
     uint8_t* pmemAddr_;
     uint64_t pmemAddr_size_;
     unsigned int burstSize_;
-
+    uint64_t gacc_clk;
 
 protected:
     Config &config_;

@@ -10,6 +10,7 @@ void GlobalAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
     pmemAddr_ = pmemAddr;
     pmemAddr_size_ = pmemAddr_size;
     burstSize_ = burstSize;
+    gacc_clk = 0; //CLK 을 measure 해야 됨
 }
 
 // void 로 해도 상관 없을 듯
@@ -18,6 +19,8 @@ void GlobalAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
 int GlobalAccumulator::AddTransaction(uint64_t hex_addr, bool is_write, uint8_t* DataPtr) {
     // Add transaction to the memory system
     // memory_system_.AddTransaction(hex_addr, is_write, DataPtr);
+    // READ 명령어으 경우 직접 pmemAddr에 접근하여 데이터를 읽어옴
+    // READ 명령어만 지원
     if(!is_write)
         memcpy(bank_data_ , pmemAddr_ + hex_addr, WORD_SIZE); 
     

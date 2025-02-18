@@ -70,7 +70,8 @@ int main(int argc, const char **argv) {
 
         //DRAF must be initialized from header file (or dat file)
         std::vector<std::vector<re_aligned_dram_format>> DRAF_BG= loadResultFromFile("../sparse_suite/tiled_draf.dat",64);
-
+        //std::vector<std::vector<re_aligned_dram_format>> DRAF_BG = loadResultFromFile("../sparse_suite/draf_dat/tiled_draf_cant.dat", 64);
+        
         // Calculate total size needed for the DRAF array
         size_t totalSize = 0;
         for (const auto& bg : DRAF_BG) {
