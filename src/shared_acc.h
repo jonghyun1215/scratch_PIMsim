@@ -45,6 +45,9 @@ public:
               unsigned int burstSize);
     void PrintElement(Element element);
 
+    //TW added 2025.02.22
+    void FlushQueue(); //To flush all values in the queue
+
     // DRAM bank로 부터 column data를 읽어오는 함수
     void ReadColumn(uint64_t hex_addr);
     uint64_t ReverseAddressMapping(Address& addr);

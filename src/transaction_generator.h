@@ -81,6 +81,7 @@ class TransactionGenerator {
     virtual void Execute() = 0;
     virtual void GetResult() = 0;
     virtual void CheckResult() = 0;
+    virtual void AdditionalAccumulation() = 0;
 
    //아래에 있는 Function들은 모든 transacion generator에서 사용할 수 있는 함수들
    //위의 함수는 override를 하여, 사용하는 경우의 transaction generator가 각각 정의
@@ -121,7 +122,11 @@ class SpmvTransactionGenerator : public TransactionGenerator {
     void SetData() override;
     void Execute() override;
     void GetResult() override;
-    void CheckResult() override;
+    void AdditionalAccumulation() override;
+    void CheckResult() override {};
+
+    uint8_t *partial_index_;
+    uint8_t *partial_value_;
 
  private:
     void ExecuteBank(int bank);
@@ -136,6 +141,40 @@ class SpmvTransactionGenerator : public TransactionGenerator {
     uint32_t *ukernel_spmv_;
     uint32_t *ukernel_spmv_last_;
 };
+
+//TW added
+class NoPIMSpmvTransactionGenerator : public TransactionGenerator {
+   public:
+      NoPIMSpmvTransactionGenerator(const std::string& config_file,
+                               const std::string& output_dir,
+                               std::vector<std::vector<re_aligned_dram_format>> DRAF_BG,
+                               uint8_t *output_vector)
+          : TransactionGenerator(config_file, output_dir),
+            DRAF_BG_(DRAF_BG), output_vector_(output_vector){}
+      void Initialize() override;
+      void SetData() override;
+      void Execute() override{};
+      void GetResult() override;
+      void AdditionalAccumulation() override {};
+      void CheckResult() override {};
+  
+      uint8_t *partial_index_;
+      uint8_t *partial_value_;
+  
+   private:
+      void ExecuteBank(int bank);
+  
+      std::vector<std::vector<re_aligned_dram_format>> DRAF_BG_;
+      uint8_t *output_vector_; 
+      uint32_t kernel_execution_time_;
+      //uint64_t m_, n_; //Matrix의 크기를 전달하기 위한 코드
+      uint64_t addr_DRAF_, addr_output_vector_;
+      uint64_t ukernel_access_size_;
+      uint64_t ukernel_count_per_pim_;
+      uint32_t *ukernel_spmv_;
+      uint32_t *ukernel_spmv_last_;
+  };
+  
 
 //TW added
 class CPUSpmvTransactionGenerator : public TransactionGenerator {
@@ -153,6 +192,7 @@ class CPUSpmvTransactionGenerator : public TransactionGenerator {
     void Execute() override;
     void GetResult() override {};
     void CheckResult() override {};
+    void AdditionalAccumulation() override{};
 
  private:
     void ExecuteBank(int bank, int batch);

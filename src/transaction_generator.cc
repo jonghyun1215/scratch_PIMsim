@@ -179,16 +179,15 @@ void SpmvTransactionGenerator::SetData(){
         //std::cout<<"DRAF_BG_["<<i<<"].size() : "<<DRAF_BG_[i].size()<<std::endl;
         //i=0 ~ 63
         uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i] //bg = 0, 1, 2, 3
-        uint32_t current_row = 0;     // Start row at 0 for each DRAF_BG[i]
+        uint32_t ro = 0;     // Start row at 0 for each DRAF_BG[i]
         uint32_t current_ch = i / 4;  // Increment ch after every 4 bg //ch = 0 ~ 15
 
         for (size_t j = 0; j < DRAF_BG_[i].size(); ++j) {
             uint32_t ba = j % 4;      // Bank cycles 0, 1, 2, 3
             if (ba == 0 && j > 0) {
-                current_row++;        // Increment row after each full cycle of ba
+                ro++;        // Increment row after each full cycle of ba
             }
 
-            uint32_t ro = current_row; // Row value
             uint32_t co = 0;          // Column (start of the row)
 
             // Construct the address
@@ -216,7 +215,7 @@ void SpmvTransactionGenerator::SetData(){
                 if(co <= 21 || co ==29){
                     TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
                     // (TODO) 여기 쓰이는 데이터가 맞는지 확인 필요
-                    if(taewoon_debugg){
+                    /*if(taewoon_debugg){
                         if(co == 0){ //Col = 0일 때는 32B 4B data 8개
                             for (uint32_t test=0; test < 7; test++) { //SIZE_WORD = 32
                                 uint32_t value;
@@ -262,7 +261,7 @@ void SpmvTransactionGenerator::SetData(){
                                 index_vec++;
                             }
                         }
-                    }
+                    }*/
                 }
             }
         }
@@ -432,6 +431,14 @@ void SpmvTransactionGenerator::Execute() {
             }
         }
 
+        /*
+        // Global accumulator trigger 하기 위한 코드
+        // Shared accumulator 동작 검증 후 주석 풀고
+        // 동작 검증 필요 
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute Global Accumulator\n";
+        #endif
+        
         // To trigger global accumulator
         for (uint64_t co = 22; co < 29; co++) {
             for (int ch = 0; ch < NUM_CHANNEL; ch++) {
@@ -441,25 +448,8 @@ void SpmvTransactionGenerator::Execute() {
                 //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 TryAddTransaction(hex_addr, false, data_temp_);
             }
-        }
-        // Global accumulator trigger 하기 위한 코드
-        // Shared accumulator 동작 검증 후 주석 풀고
-        // 동작 검증 필요 
-        /*
-        #ifdef debug_mode
-        std::cout << "\nHOST:\tExecute Global Accumulator\n";
-        #endif
-        for (int co_i = 0; co_i < 8; co_i++) {
-            uint64_t co = co_o * 8 + co_i;
-            for (int ch = 0; ch < NUM_CHANNEL; ch++) {
-                //channel, rank, bankgroup, bank, row, column
-                Address addr(ch, 0, 0, EVEN_BANK, TRIGGER_GACC, co);
-                uint64_t hex_addr = ReverseAddressMapping(addr);
-                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
-                TryAddTransaction(hex_addr, false, data_temp_);
-            }
-        }
-        */
+        }*/
+        
     }
 
     Barrier();
@@ -468,6 +458,10 @@ void SpmvTransactionGenerator::Execute() {
 void SpmvTransactionGenerator::GetResult() {
     //MULETEST에서 가져온 GetResult
     // Mode transition: AB -> SB
+    // Try add transaction에 값을 넣을 때
+    
+    //*data_temp_ |= 1; -> 이걸 안해주면 에러가 발생함 (값이 없으면 에러가 발생하는 듯)
+
     #ifdef debug_mode
     std::cout << "HOST:\t[4] AB -> SB \n";
     #endif
@@ -477,21 +471,78 @@ void SpmvTransactionGenerator::GetResult() {
         TryAddTransaction(hex_addr, false, data_temp_);
     }
     Barrier();
-    //여기까지는 모두 동일
-
-    /*uint64_t strided_size = Ceiling(n_ * UNIT_SIZE, SIZE_WORD * NUM_BANK);
-    // Read output data z
+    uint8_t *data_temp_ = (uint8_t *) malloc(burstSize_);
+    uint8_t *index_temp_ = (uint8_t *) malloc(burstSize_);
+    uint8_t *partial_index_ = (uint8_t *) malloc(burstSize_);
+    uint8_t *partial_value_ = (uint8_t *) malloc(burstSize_);
     #ifdef debug_mode
-    std::cout << "\nHOST:\tRead output data z\n";
+    std::cout << "\nHOST:\tRead output data\n";
     #endif
-    for (int offset = 0; offset < strided_size ; offset += SIZE_WORD)
-        TryAddTransaction(addr_z_ + offset, false, z_ + offset);
-    Barrier();*/
+
+    /*// 1044869번의 memory cycle, 22972의 Loop count
+    for (size_t i = 0; i < DRAF_BG_.size(); ++i) {
+        uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i] //bg = 0, 1, 2, 3
+        uint32_t ro = 0;     // Start row at 0 for each DRAF_BG[i]
+        uint32_t ch = i / 4;  // Increment ch after every 4 bg //ch = 0 ~ 15
+
+        for (size_t j = 0; j < DRAF_BG_[i].size(); ++j) {
+            uint32_t ba = j % 4;      // Bank cycles 0, 1, 2, 3
+            if (ba == 0 && j > 0) {
+                ro++;        // Increment row after each full cycle of ba
+            }
+            // 위에 ro, bg, bg, ba, ch 까지 정의
+            for (uint64_t co = 8; co <= 21; co++) {
+                Address addr(ch, 0, bg, ba, ro, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_index_);
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+            }
+            for (uint64_t co = 22; co < 29; co++) {
+                Address addr(ch, 0, bg, ba, ro, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_value_);
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+            }
+        }
+    }*/
+
+    // 483920의 memory cycle, 23040의 Loop count
+    //BG accumulator region의 데이터를 읽어와 추가적인 accumulating을 하는 경우를 가정
+    //읽어올 때, 데이터가 0 일경우 Row index도 0으로 처리하여, 연산에서 빠지도록 했음을 가정
+ 
+    // 데이터를 읽어오는 과정
+    for (int ro = 0; ro < kernel_execution_time_; ro++) {
+        for(int BA = 0; BA < 4; BA++){
+            for(int BG = 0; BG < 4; BG++){
+                for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+                    for (uint64_t co = 8; co <= 21; co++) {
+                        Address addr(ch, 0, BG, BA, ro, co);
+                        uint64_t hex_addr = ReverseAddressMapping(addr);
+                        TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_index_);
+                    }
+                    for (uint64_t co = 22; co < 29; co++) {
+                        Address addr(ch, 0, BG, BA, ro, co);
+                        uint64_t hex_addr = ReverseAddressMapping(addr);
+                        TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_value_);
+                    }
+                }
+            }
+        }
+    }
+    Barrier();
 }
 
-void SpmvTransactionGenerator::CheckResult() {
+void SpmvTransactionGenerator::AdditionalAccumulation(){
+    #ifdef debug_mode
+    std::cout << "HOST:\t Additional accumulation start \n";
+    #endif
+    //위에서 읽어온 데이터를 accumulate 하는데 걸리는 cycle에 대한 측정
+}
+
+//Check result가 없으면 자동으로 없을 때를 기준으로 0값을 반환
+/*void SpmvTransactionGenerator::CheckResult() {
     //MUL에서 가져온 CheckResult
-    /*int err = 0;
+    int err = 0;
     float h_err = 0.;
     uint8_t *answer = (uint8_t *) malloc(sizeof(uint16_t) * n_);
 
@@ -509,12 +560,184 @@ void SpmvTransactionGenerator::CheckResult() {
         half h_z(*reinterpret_cast<half*>(&((uint16_t*)z_)[i]));
         h_err += fabs(h_answer - h_z);  // fabs stands for float absolute value
     }
-    std::cout << "ERROR : " << h_err << std::endl;*/
+    std::cout << "ERROR : " << h_err << std::endl;
+}*/
+
+///////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+/////////// TO measure cylce when no PIM //////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+void NoPIMSpmvTransactionGenerator::Initialize() { //여기는 코딩 끝
+    //TODO: ukernel_count_per_pim_ 계산을 어떻게 진행하는 것인지 확인
+    std::cout<<"Initialize SpmvTransactionGenerator" << std::endl;
+    addr_DRAF_ = 0; //Base address로 기본 pointing 수행
+
+    //ukenrnel_access_size는 모두 SIZE_WORD * 8 * NUM_BANK로 동일
+    //ukernel_access_size = Word(32) * 8 * # of Bank(256) = 65536
+    ukernel_access_size_ = SIZE_WORD * 8 * NUM_BANK; // SIZE_WORD = 32, NUM_BANK = 256 (Channel 당 Bank 수는 16, 16채널)
+    //UNIT_SIZE = 2, ukernel_access_size_ = 65536
+    
+    // (TODO) N을 어떻게 결정?
+    //ukernel_count_per_pim_ = Ceiling(n_ * UNIT_SIZE, ukernel_access_size_)
+    //std::cout<<"ukernel_count_per_pim_ : "<<ukernel_count_per_pim_<<std::endl;
+
+    // Define ukernel for spmv
+    ukernel_spmv_ = (uint32_t *) malloc(sizeof(uint32_t) * 32);
+
+    // ukernel을 몇번 실행시킬지 결정하기 위해 추가한 코드
+    // 가장 row를 많이 차지하는 DRAF_BG를 찾아서 그것을 기준으로 ukernel_count_per_pim_를 결정
+    size_t max_size = 0;
+    size_t max_index = 0;
+    // Iterate over DRAF_BG to find the maximum size
+    std::cout << "DRAF_BG_.size() : " << DRAF_BG_.size() << std::endl;
+
+    for (uint32_t i = 0; i < DRAF_BG_.size(); ++i) {
+        if (DRAF_BG_[i].size() > max_size) {
+            max_size = DRAF_BG_[i].size();
+            max_index = i;
+        }
+    }
+
+    // 가장 많은 row를 차지하는 DRAF_BG를 찾아서 그것을 기준으로 ukernel_count_per_pim_를 결정
+    // 4를 나누는 것은 BG 기준으로 묶여 있기 때문에, 4등분이 이루어지는 것을 고려
+    kernel_execution_time_ = DRAF_BG_[max_index].size() / 4; // ukernel_count_per_pim_
+    std::cout << "Max # of rows: " << kernel_execution_time_ << std::endl;
+
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////
+//Memory에 PIM연산을 위한 데이터를 저장하는 과정
+//ROW 하나당 23번의 write 필요
+//column index 1번, value 7번, row index 14번, vector 1번 = 23번
+void NoPIMSpmvTransactionGenerator::SetData(){
+    // strided size of one operand with one computation part(minimum)
+    // UNIT_SIZE = 2, SIZE_WORD = 32, NUM_BANK = 256
+    // strided_size = 2 * 32 * 256 = 16384
+    
+    //uint64_t strided_size = Ceiling(n_ * UNIT_SIZE, SIZE_WORD * NUM_BANK);
 
+    #ifdef debug_mode
+    std::cout << "HOST:\tSet input data...\n";
+    #endif
+
+    //std::cout<<"DRAF_BG_.size() : "<<DRAF_BG_.size()<<std::endl;
+    for (size_t i = 0; i < DRAF_BG_.size(); ++i) {
+        //std::cout<<"DRAF_BG_["<<i<<"].size() : "<<DRAF_BG_[i].size()<<std::endl;
+        //i=0 ~ 63
+        uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i] //bg = 0, 1, 2, 3
+        uint32_t ro = 0;     // Start row at 0 for each DRAF_BG[i]
+        uint32_t current_ch = i / 4;  // Increment ch after every 4 bg //ch = 0 ~ 15
+
+        for (size_t j = 0; j < DRAF_BG_[i].size(); ++j) {
+            uint32_t ba = j % 4;      // Bank cycles 0, 1, 2, 3
+            if (ba == 0 && j > 0) {
+                ro++;        // Increment row after each full cycle of ba
+            }
+
+            uint32_t co = 0;          // Column (start of the row)
+
+            // Construct the address
+            //Address addr(current_ch, 0, bg, ba, ro, co);
+
+            // Translate to physical address
+            //uint64_t hex_addr = ReverseAddressMapping(addr);
+
+            // Flatten re_aligned_dram_format into uint8_t*
+            // 
+            const re_aligned_dram_format& element = DRAF_BG_[i][j];
+            const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&element);
+            //size_t total_size = sizeof(re_aligned_dram_format);
+            
+            // TW added
+            // To test for print the setting data
+            bool taewoon_debugg = false; //데이터는 정상적으로 쓰여지고 있는 것을 확인
+            int index_row = 0;
+            int index_vec = 0;
+            int index_val = 0;
+            
+            for (co = 0; co < 32; co++) {
+                Address addr(current_ch, 0, bg, ba, ro, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                if(co <= 21 || co ==29){
+                    TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
+                }
+            }
+        }
+    }
+    Barrier();
+}
+
+void NoPIMSpmvTransactionGenerator::GetResult() {
+    //MULETEST에서 가져온 GetResult
+    // Mode transition: AB -> SB
+    // Try add transaction에 값을 넣을 때
+    
+    //*data_temp_ |= 1; -> 이걸 안해주면 에러가 발생함 (값이 없으면 에러가 발생하는 듯)
+
+    uint8_t *data_temp_ = (uint8_t *) malloc(burstSize_);
+    uint8_t *index_temp_ = (uint8_t *) malloc(burstSize_);
+    uint8_t *partial_index_ = (uint8_t *) malloc(burstSize_);
+    uint8_t *partial_value_ = (uint8_t *) malloc(burstSize_);
+    #ifdef debug_mode
+    std::cout << "\nHOST:\tRead output data\n";
+    #endif
+
+    /*// 1044869번의 memory cycle, 22972의 Loop count
+    for (size_t i = 0; i < DRAF_BG_.size(); ++i) {
+        uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i] //bg = 0, 1, 2, 3
+        uint32_t ro = 0;     // Start row at 0 for each DRAF_BG[i]
+        uint32_t ch = i / 4;  // Increment ch after every 4 bg //ch = 0 ~ 15
+
+        for (size_t j = 0; j < DRAF_BG_[i].size(); ++j) {
+            uint32_t ba = j % 4;      // Bank cycles 0, 1, 2, 3
+            if (ba == 0 && j > 0) {
+                ro++;        // Increment row after each full cycle of ba
+            }
+            // 위에 ro, bg, bg, ba, ch 까지 정의
+            for (uint64_t co = 8; co <= 21; co++) {
+                Address addr(ch, 0, bg, ba, ro, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_index_);
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+            }
+            for (uint64_t co = 22; co < 29; co++) {
+                Address addr(ch, 0, bg, ba, ro, co);
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_value_);
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+            }
+        }
+    }*/
+
+    // 483920의 memory cycle, 23040의 Loop count
+    //BG accumulator region의 데이터를 읽어와 추가적인 accumulating을 하는 경우를 가정
+    //읽어올 때, 데이터가 0 일경우 Row index도 0으로 처리하여, 연산에서 빠지도록 했음을 가정
+ 
+    // 데이터를 읽어오는 과정
+    for (int ro = 0; ro < kernel_execution_time_; ro++) {
+        for(int BA = 0; BA < 4; BA++){
+            for(int BG = 0; BG < 4; BG++){
+                for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+                    for (uint64_t co = 8; co <= 21; co++) {
+                        Address addr(ch, 0, BG, BA, ro, co);
+                        uint64_t hex_addr = ReverseAddressMapping(addr);
+                        TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_index_);
+                    }
+                    for (uint64_t co = 22; co < 29; co++) {
+                        Address addr(ch, 0, BG, BA, ro, co);
+                        uint64_t hex_addr = ReverseAddressMapping(addr);
+                        TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_value_);
+                    }
+                }
+            }
+        }
+    }
+    Barrier();
+}
 
 /////////////////////////////////////////////////////////////////////////////
 //////////////CCCCCCC/////////PPPPPPPPPPPPP/////////UUU///////////UUU////////
@@ -557,7 +780,7 @@ void CPUSpmvTransactionGenerator::Execute() {
 
     Barrier();
     
-    /*for (uint32_t idx = 0; idx < 1; idx++) {
+    for (uint32_t idx = 0; idx < 1; idx++) {
         uint32_t row, col;
         uint16_t value;
 
@@ -590,7 +813,7 @@ void CPUSpmvTransactionGenerator::Execute() {
         TryAddTransaction(y_addr, true, data_temp_);
 
         Barrier(); // Ensure proper transaction order
-    }*/
+    }
 }
 ////////////////////////////TW Added end///////////////////////////////////////
 

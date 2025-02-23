@@ -1,6 +1,8 @@
 #include <iostream>
 #include "./shared_acc.h"
 
+#define MAX_QUEUE_SIZE 16
+
 namespace dramsim3 {
 
 SharedAccumulator::SharedAccumulator(Config &config, int id, PimUnit& pim1, PimUnit& pim2)
@@ -49,7 +51,7 @@ uint64_t SharedAccumulator::ReverseAddressMapping(Address& addr) {
 //이때, DRAM row에서 받아온 데이터를 Index Queue에 넣어주는 함수
 //L_indices와 R_indices는 각각 PimUnit 1과 연결된 Bansk PimUnit 2와 연결된 Bank에서 받아온 데이터
 void SharedAccumulator::loadIndices(uint32_t *L_indices, uint32_t *R_indices) {
-    std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
+    //std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
     for (size_t i = 0; i < 8; i++) {
         //std::cout << " SA: L_indices[" << i << "]: " << L_indices[i]<<" ";
         if(L_indices[i] != 0){
@@ -63,13 +65,13 @@ void SharedAccumulator::loadIndices(uint32_t *L_indices, uint32_t *R_indices) {
             R_IQ.push(Element(i,R_indices[i]));
         }
     }
-    std::cout << "\n\n";
+    //std::cout << "\n\n";
 }
 
 //Index Queue에 데이터를 넣는 함수2
 //위와 설명은 동일 BUT 두 번째 SACC 실행시 index가 0 ~ 7이 아닌 8 ~ 15로 들어와야 됨
 void SharedAccumulator::loadIndices_2(uint32_t *L_indices, uint32_t *R_indices) {
-    std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
+    //std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
     for (size_t i = 8; i < 15; i++) {
         //std::cout << " SA: L_indices[" << i << "]: " << L_indices[i-8]<<" ";
         if(L_indices[i] != 0){
@@ -108,7 +110,7 @@ void SharedAccumulator::simulateStep() {
         // TW added for debug
         //PrintElement(R_front);
 
-        if (L_front.value == R_front.value) {
+        if ((L_front.value == R_front.value) && (L_front.value != 0 && R_front.value != 0)) {
             // Pop both queues
             L_IQ.pop();
             L_Q_pop_cnt++;
@@ -117,8 +119,6 @@ void SharedAccumulator::simulateStep() {
 
             // Signal load unit
             loadUnit(L_front.order, R_front.order); //order는 GRF를 access하기 위해 generate 된 index
-            //std::cout << "L_front.order : " << (uint32_t)L_front.order << std::endl;
-            //std::cout << "R_front.order : " << (uint32_t)R_front.order << std::endl;
         } else if (L_front.value > R_front.value) {
             //std::cout << "SA: MISS L is bigger than R\n";
             // Pop R_IQ
@@ -150,6 +150,7 @@ void SharedAccumulator::simulateStep() {
 void SharedAccumulator::loadUnit(int index_l, int index_r) {
 
     std::cout << "SA: SA ID: " << SA_id << " Index Same " << std::endl;
+    std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
     // Example: Load a value from GRF
     //uint64_t address = index * sizeof(int);  // Assuming an address mapping
     uint16_t data_l = 0;
@@ -166,9 +167,17 @@ void SharedAccumulator::loadUnit(int index_l, int index_r) {
     pim_unit_[0]->GRF_A_[index_l] = data_l + data_r;
 }
 
+//TW added 2025.02.22
+void SharedAccumulator::FlushQueue(){
+    while(!L_IQ.empty())
+        L_IQ.pop();
+    while(!R_IQ.empty())
+        R_IQ.pop();
+}
+
 void SharedAccumulator::runSimulation(uint64_t hex_addr) {
     #ifdef debug_mode
-    std::cout << "Shared Accumulator ID: " << SA_id << " starts simulation\n";
+    //std::cout << "Shared Accumulator ID: " << SA_id << " simulation\n";
     #endif
     // Load index from DRAM bank
     //pim_unit_[0];
@@ -183,12 +192,12 @@ void SharedAccumulator::runSimulation(uint64_t hex_addr) {
     
     if(column_index != 0 && previous_column != column_data[column_index]){
         if(SA_id % 2 == 1){
-            std::cout<< "SA: SA ID: " << SA_id << " L_IQ is flushed\n";
+            //std::cout<< "SA: SA ID: " << SA_id << " L_IQ is flushed\n";
             while(!L_IQ.empty())
                 L_IQ.pop();
         }
         else{
-            std::cout<< "SA: SA ID: " << SA_id << " R_IQ is flushed\n";
+            //std::cout<< "SA: SA ID: " << SA_id << " R_IQ is flushed\n";
             while(!R_IQ.empty())
                 R_IQ.pop();
         }
@@ -202,6 +211,8 @@ void SharedAccumulator::runSimulation(uint64_t hex_addr) {
         column_index = 0;
     }
 
+    //column index가 있는 곳을 잘 읽어 오고 있는 것을 확인
+    
     ReadColumn(hex_addr_col); //4B x 7개와 empty 4B 1개
     // For debug // TW added
     /*for (int i = 0; i < 8; i++) {
@@ -219,13 +230,24 @@ void SharedAccumulator::runSimulation(uint64_t hex_addr) {
         if(L_IQ.empty() || R_IQ.empty()){
             break;
         }
-        if (loop > 1000) {
+        if (loop > 100000) {
             std::cerr << "SA: Infinite loop detected\n";
             exit(1);
         }
     }
-    if(SA_id == 4)
+
+    //std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
+    // TW added flush at 2025.02.22
+    // QUEUE가 32개 이상이 되면 flush (64 일때 보다 성능이 좋게 나옴)
+    if(L_IQ.size() > MAX_QUEUE_SIZE /2 || R_IQ.size() > MAX_QUEUE_SIZE /2){
         std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
-    std::cout << "Shared Accumulator ID: " << SA_id << " ends simulation\n";
+        std::cout << "SA ID: " << SA_id << " L_IQ & R_IQ flushed\n";
+        FlushQueue();
     }
+    if(L_IQ.size() > MAX_QUEUE_SIZE || R_IQ.size() > MAX_QUEUE_SIZE){
+        std::cerr << "SA ID: " << SA_id << " L_IQ or R_IQ is overflowed\n";
+        exit(1);
+    }
+}
+
 }  // namespace dramsim3

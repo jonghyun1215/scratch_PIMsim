@@ -90,6 +90,9 @@ bool PimFuncSim::ModeChanger(uint64_t hex_addr) {
     if (addr.row == 0x3fff) { // MAP_SBMR = 0x3fff
         if (bankmode[addr.channel] == "AB") {
             bankmode[addr.channel] = "SB";
+            // TW added
+            //강제적으로 맞추기 위해 추가
+            // PIM_OP_MODE[addr.channel] = false;
         }
         if (DebugMode(hex_addr))
             std::cout << " Pim_func_sim: AB → SB mode change\n";
@@ -320,10 +323,10 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                         if(shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC == true \
                             && shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC == true)
                         {
-                            if (DebugMode(hex_addr)){
+                            /*if (DebugMode(hex_addr)){
                                 std::cout << " Pim_func_sim: Trigger SACC\n";
                                 std::cout << " Pim index : " << pim_index << " Pim index SACC : " << pim_index_SACC << "\n";
-                            }
+                            }*/
                             // Send data from DRAM to L_IQ, R_IQ
                             if(addr.column % 2 == 0){
                                 //왼쪽 홀수, 오른쪽 짝수
@@ -341,9 +344,10 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                 }
                 // Change bankmode to PIM → AB when programmed μkernel is
                 // finished and returns EXIT_END
-                else if (ret == EXIT_END) {
-                    if (DebugMode(hex_addr))
-                        std::cout << " Pim_func_sim: PIM → AB mode change\n";
+                if (ret == EXIT_END) {
+                    if (DebugMode(hex_addr)){
+                        std::cout << " Pim_func_sim : PIM → AB mode change\n";
+                    }
                     PIM_OP_MODE[addr.channel] = false;
                 }
             }
