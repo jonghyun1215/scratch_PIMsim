@@ -1,2 +1,6 @@
 suite/partitioned 폴더: 안에 kmeans 기반의 SW optimization 및 생성된 new tiled mtx file들이 존재
 generate_DRAF.cc : SW optimziation mtx file들을 기반으로 draf_dat 폴더에, .dat 파일을 생성하여 저장
+
+./suite/tile_without_optimization.cc 코드를 돌려 tile_wo_optimization/에 새롭게 생성된 mtx를 가득 채워줌
+현재 directory의 tiled_no_opt_DRAF.cc를 돌려, wo_sw_opt_dat에 dat파일을 채워줌
+./suite/sorted_suite/spaceA_mapping.cc: spaceA mapping method 와 DRAF 방식의 memory usage 를 비교하기 위해 설계

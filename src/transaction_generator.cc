@@ -138,11 +138,7 @@ void SpmvTransactionGenerator::Initialize() { //여기는 코딩 끝
     ukernel_spmv_[1]=0b10010010001000001000000000000000;  // MUL(AAM0) GRF_A BANK SRF_M
     ukernel_spmv_[2]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
     ukernel_spmv_[3]=0b11000000000000001000000000000000;  // SACC(AAM0) BANK BANK
-    // (TODO) SACC를 두 번에 걸쳐 trigger하는 방법을 도입하는 것이 좋을까? -> 우선 그렇게 수정
     ukernel_spmv_[4]=0b00010000000001000001100000000110;  // JUMP -3 6
-    //ukernel_spmv_[]=0b00010000000001000001000000000110;  // JUMP -2 6
-    //ukernel_spmv_[]=0b00010000000001000001000000000111;  // JUMP -2 7
-    //ukernel_spmv_[]=0b00010000000001000000100000000111;  // JUMP -1 7
     ukernel_spmv_[5]=0b01000000010000001000000000000000;  // MOV(AAM0) BANK GRF_A
     ukernel_spmv_[6]=0b00010000000001000000100000000110; //JUMP -1 6
 
@@ -168,7 +164,7 @@ void SpmvTransactionGenerator::SetData(){
     // UNIT_SIZE = 2, SIZE_WORD = 32, NUM_BANK = 256
     // strided_size = 2 * 32 * 256 = 16384
     
-    //uint64_t strided_size = Ceiling(n_ * UNIT_SIZE, SIZE_WORD * NUM_BANK);
+    //uint64_t strided_size = Ceiling(n_ *x UNIT_SIZE, SIZE_WORD * NUM_BANK);
 
     #ifdef debug_mode
     std::cout << "HOST:\tSet input data...\n";
@@ -346,12 +342,18 @@ void SpmvTransactionGenerator::Execute() {
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 Address addr1(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset); //8, 10...
                 hex_addr = ReverseAddressMapping(addr1);
-                // 2. Transaction for trigger SACC
+                // 2. Transaction for trigger SACC + NOP
+                //SACC
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                //NOP
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 Address addr2(ch, 0, 0, EVEN_BANK, ro, co + sacc_offset+1); //9, 11...
                 hex_addr = ReverseAddressMapping(addr2);
-                // 3. Transaction for trigger SACC
+                // 3. Transaction for trigger SACC + NOP 
+                //SACC
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                //NOP
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 // 4. JUMP는 자동으로
                 sacc_offset++;
             }
@@ -409,12 +411,18 @@ void SpmvTransactionGenerator::Execute() {
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 Address addr1(ch, 0, 0, ODD_BANK, ro, co + sacc_offset);
                 hex_addr = ReverseAddressMapping(addr1);
-                // 2. Transaction for trigger SACC
+                // 2. Transaction for trigger SACC + NOP
+                //SACC
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                //NOP
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 Address addr2(ch, 0, 0, ODD_BANK, ro, co + sacc_offset+1);
                 hex_addr = ReverseAddressMapping(addr2);
-                // 3. Transaction for trigger SACC
+                // 3. Transaction for trigger SACC + NOP
+                //SACC
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+                //NOP
+                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
                 // 4. JUMP는 자동으로
                 sacc_offset++;
             }
@@ -479,7 +487,7 @@ void SpmvTransactionGenerator::GetResult() {
     std::cout << "\nHOST:\tRead output data\n";
     #endif
 
-    /*// 1044869번의 memory cycle, 22972의 Loop count
+    // 1044869번의 memory cycle, 22972의 Loop count
     for (size_t i = 0; i < DRAF_BG_.size(); ++i) {
         uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i] //bg = 0, 1, 2, 3
         uint32_t ro = 0;     // Start row at 0 for each DRAF_BG[i]
@@ -504,14 +512,14 @@ void SpmvTransactionGenerator::GetResult() {
                 //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
             }
         }
-    }*/
+    }
 
     // 483920의 memory cycle, 23040의 Loop count
     //BG accumulator region의 데이터를 읽어와 추가적인 accumulating을 하는 경우를 가정
     //읽어올 때, 데이터가 0 일경우 Row index도 0으로 처리하여, 연산에서 빠지도록 했음을 가정
  
     // 데이터를 읽어오는 과정
-    for (int ro = 0; ro < kernel_execution_time_; ro++) {
+    /*for (int ro = 0; ro < kernel_execution_time_; ro++) {
         for(int BA = 0; BA < 4; BA++){
             for(int BG = 0; BG < 4; BG++){
                 for (int ch = 0; ch < NUM_CHANNEL; ch++) {
@@ -528,8 +536,11 @@ void SpmvTransactionGenerator::GetResult() {
                 }
             }
         }
-    }
+    }*/
     Barrier();
+
+    // To print accumulation count
+    memory_system_.PrintAccumulateCount();
 }
 
 void SpmvTransactionGenerator::AdditionalAccumulation(){
@@ -686,7 +697,7 @@ void NoPIMSpmvTransactionGenerator::GetResult() {
     std::cout << "\nHOST:\tRead output data\n";
     #endif
 
-    /*// 1044869번의 memory cycle, 22972의 Loop count
+    // 1044869번의 memory cycle, 22972의 Loop count
     for (size_t i = 0; i < DRAF_BG_.size(); ++i) {
         uint32_t bg = i % 4;          // Fixed bg for each DRAF_BG[i] //bg = 0, 1, 2, 3
         uint32_t ro = 0;     // Start row at 0 for each DRAF_BG[i]
@@ -711,14 +722,14 @@ void NoPIMSpmvTransactionGenerator::GetResult() {
                 //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
             }
         }
-    }*/
+    }
 
     // 483920의 memory cycle, 23040의 Loop count
     //BG accumulator region의 데이터를 읽어와 추가적인 accumulating을 하는 경우를 가정
     //읽어올 때, 데이터가 0 일경우 Row index도 0으로 처리하여, 연산에서 빠지도록 했음을 가정
- 
+
     // 데이터를 읽어오는 과정
-    for (int ro = 0; ro < kernel_execution_time_; ro++) {
+    /*for (int ro = 0; ro < kernel_execution_time_; ro++) {
         for(int BA = 0; BA < 4; BA++){
             for(int BG = 0; BG < 4; BG++){
                 for (int ch = 0; ch < NUM_CHANNEL; ch++) {
@@ -735,7 +746,7 @@ void NoPIMSpmvTransactionGenerator::GetResult() {
                 }
             }
         }
-    }
+    }*/
     Barrier();
 }
 

@@ -20,6 +20,8 @@ SharedAccumulator::SharedAccumulator(Config &config, int id, PimUnit& pim1, PimU
     sa_clk = 0;
     column_index = 0;
     previous_column = 0;
+
+    accumulate_count = 0;
 }
 
 void SharedAccumulator::init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
@@ -116,7 +118,7 @@ void SharedAccumulator::simulateStep() {
             L_Q_pop_cnt++;
             R_IQ.pop();
             R_Q_pop_cnt++;
-
+            
             // Signal load unit
             loadUnit(L_front.order, R_front.order); //order는 GRF를 access하기 위해 generate 된 index
         } else if (L_front.value > R_front.value) {
@@ -149,8 +151,9 @@ void SharedAccumulator::simulateStep() {
 // 두개의 역할을 loadunit이 처리
 void SharedAccumulator::loadUnit(int index_l, int index_r) {
 
-    std::cout << "SA: SA ID: " << SA_id << " Index Same " << std::endl;
-    std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
+    //std::cout << "SA: SA ID: " << SA_id << " Index Same " << std::endl;
+    //std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
+    accumulate_count++;
     // Example: Load a value from GRF
     //uint64_t address = index * sizeof(int);  // Assuming an address mapping
     uint16_t data_l = 0;
@@ -158,6 +161,7 @@ void SharedAccumulator::loadUnit(int index_l, int index_r) {
 
     // Read data from GRF
     // Queue에서 받아온 정보를 기반으로, GRF의 index를 가져와야 됨)
+    // GRF_A_는 2 bytes accessable 하게 설계 되어 있음
     // (TODO) GRF_A에 access 할 떄 Index_l, index_r이 정상적인지 확인 필요
     data_l = pim_unit_[0]->GRF_A_[index_l];
     data_r = pim_unit_[1]->GRF_A_[index_r];
@@ -176,6 +180,7 @@ void SharedAccumulator::FlushQueue(){
 }
 
 void SharedAccumulator::runSimulation(uint64_t hex_addr) {
+    accumulate_count = 0;
     #ifdef debug_mode
     //std::cout << "Shared Accumulator ID: " << SA_id << " simulation\n";
     #endif
@@ -211,10 +216,9 @@ void SharedAccumulator::runSimulation(uint64_t hex_addr) {
         column_index = 0;
     }
 
-    //column index가 있는 곳을 잘 읽어 오고 있는 것을 확인
-    
+    // TW added: column index가 있는 곳을 잘 읽어 오고 있는 것을 확인
     ReadColumn(hex_addr_col); //4B x 7개와 empty 4B 1개
-    // For debug // TW added
+    // 아래는 column 7개의 정보를 잘 읽어오는지 확인하기 위해 추가하였던 코드
     /*for (int i = 0; i < 8; i++) {
         //std::cout << "column_data[" << i << "] : " << column_data[i] << std::endl;
         if(column_data[7] != 0){

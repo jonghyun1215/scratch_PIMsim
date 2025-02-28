@@ -132,7 +132,7 @@ struct BoundedCapKMeans {
     }
 
     void initCentroids() {
-        srand((unsigned)time(NULL));
+        srand((unsigned)1);
         for(int i=0; i<k; i++){
             int r = rand() % cols.size();
             centroids[i] = cols[r].features;
@@ -488,9 +488,9 @@ int main(){
     // 1) 파라미터
     // -------------------------------
     const int K = 64;
-    const int KM_ITER = 10;
+    const int KM_ITER = 30;
     const int BAL_ITER = 5;
-    const float DELTA = 0.2f;
+    const float DELTA = 0.025f;
 
     // -------------------------------
     // 2) 원본 .mtx 파일들이 있는 경로 + 파일명
@@ -507,9 +507,7 @@ int main(){
         "ohne2_new.mtx",
         "pwtk_new.mtx",
         "shipsec1_new.mtx",
-        "sorted_consph_new.mtx",
         "xenon2_new.mtx",
-        "G2_circuit_new.mtx",
         "cant_new.mtx",
         "crankseg_2_new.mtx",
         "lhr71_new.mtx",
@@ -522,7 +520,7 @@ int main(){
     // -------------------------------
     // 3) 결과를 저장할 폴더 (이미 존재한다고 가정)
     // -------------------------------
-    const string outRoot = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/partitioned/";
+    const string outRoot = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/partitioned_default/";
 
     // -------------------------------
     // 4) 각 파일에 대해 처리

@@ -23,6 +23,8 @@ PimFuncSim::PimFuncSim(Config &config)
     //vecotr형으로 선언 되어 있기 때문에, 여러개의 global accumulator를 선언할 수 있음
     // i도 넣어서, id를 표시해 줘야 됨
     global_acc_.push_back(new GlobalAccumulator(config_));
+
+    accumulation_count = 0;
 }
 
 void PimFuncSim::init(uint8_t* pmemAddr_, uint64_t pmemAddr_size_,
@@ -231,6 +233,7 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                         std::cout << " Triggering global accumulator\n";
                     }
                     //TW added
+                    std::cout << "Pim_func_sim: Triggering global accumulator\n";
                     global_acc_[0]->StartAcc();
                     // 추후 global_acc_[1]도 추가할 수 있음
                     // global_acc_[1]->StartAcc();
@@ -338,7 +341,8 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
                                                                     shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->bank_temp_);
                             shared_acc_[pim_index/2]->runSimulation(hex_addr);
                             shared_acc_[pim_index/2]->pim_unit_[pim_index%2]->enter_SACC = false;
-                            shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;                     
+                            shared_acc_[pim_index_SACC/2]->pim_unit_[pim_index_SACC%2]->enter_SACC = false;      
+                            accumulation_count += shared_acc_[pim_index/2]-> accumulate_count;            
                         }
                     } 
                 }

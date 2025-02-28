@@ -170,6 +170,22 @@ std::vector<std::vector<Triplet>> partitionByColumn64(const std::vector<Triplet>
 
     return partitionedTriplets;
 }
+/*
+std::vector<std::vector<Triplet>> partitionByColumn64(const std::vector<Triplet> &triplets,
+                                                      int nrows, int ncols)
+{
+    const int numPartitions = 64;
+    std::vector<std::vector<Triplet>> partitionedTriplets(numPartitions);
+
+    // 각 Triplet에 대해 열 번호에 따라 청크 인덱스를 결정 (round-robin)
+    for (const auto &t : triplets) {
+        int partitionIndex = t.col % numPartitions;
+        partitionedTriplets[partitionIndex].push_back({t.row, t.col, t.val});
+    }
+
+    return partitionedTriplets;
+}
+*/
 
 /**
  * @brief 파티션별 Triplet 정보를 MatrixMarket(coordinate) 형식으로 파일에 저장
@@ -290,7 +306,6 @@ int main()
         "consph.mtx",
         "crankseg_2.mtx",
         "ct20stif.mtx",
-        "G2_circuit.mtx",
         "lhr71.mtx",
         "ohne2.mtx",
         "pdb1HYS.mtx",

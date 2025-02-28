@@ -70,6 +70,13 @@ bool MemorySystem::IsPendingTransaction() {
 void MemorySystem::SetWriteBufferThreshold(int threshold) {
     dram_system_->SetWriteBufferThreshold(threshold);
 }
+
+//TW added
+//TO print value how many accumulated
+void MemorySystem::PrintAccumulateCount() {
+    std::cout << "Total accumulation count: " << dram_system_->pim_func_sim_->accumulation_count<< std::endl;
+}
+
 }  // namespace dramsim3
 
 // This function can be used by autoconf AC_CHECK_LIB since

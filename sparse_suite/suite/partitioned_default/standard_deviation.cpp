@@ -116,7 +116,6 @@ int main()
         "consph",
         "crankseg_2",
         "ct20stif",
-        "G2_circuit",
         "lhr71",
         "ohne2",
         "pdb1HYS",

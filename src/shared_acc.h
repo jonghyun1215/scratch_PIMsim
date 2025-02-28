@@ -68,6 +68,8 @@ public:
     uint32_t column_index; 
     uint32_t previous_column;
 
+    uint32_t accumulate_count;
+
 protected:
     Config &config_;
 };

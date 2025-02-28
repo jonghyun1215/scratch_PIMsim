@@ -26,7 +26,7 @@ PimUnit::PimUnit(Config &config, int id)
     for (int i=0; i< WORD_SIZE / (int)sizeof(unit_t); i++) 
         dst[i] = 0;
     for (int i=0; i< GRF_SIZE / (int)sizeof(unit_t); i++) {
-        GRF_A_[i] = 0; //각 인덱스로 16Byte access 가능 한 것을 확인
+        GRF_A_[i] = 0; //각 인덱스로 2Byte access 가능 한 것을 확인
         GRF_B_[i] = 0;
     }
 

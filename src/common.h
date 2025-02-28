@@ -31,6 +31,7 @@ struct Address {
     int bank;
     int row;
     int column;
+
 };
 
 inline uint32_t ModuloWidth(uint64_t addr, uint32_t bit_width, uint32_t pos) {

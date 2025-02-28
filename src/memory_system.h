@@ -35,6 +35,10 @@ class MemorySystem {
     bool IsPendingTransaction();
     void SetWriteBufferThreshold(int threshold);
 
+    //TW added
+    //TO print value how many accumulated
+    void PrintAccumulateCount();
+
  private:
     // These have to be pointers because Gem5 will try to push this object
     // into container which will invoke a copy constructor, using pointers

@@ -41,6 +41,10 @@ class PimFuncSim {
     void init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
               unsigned int burstSize);
 
+   //TW added
+   //To print value how many accumulated
+   int accumulation_count = 0;
+
  protected:
     Config &config_;
 };
