@@ -324,9 +324,9 @@ int main() {
     // 처리할 데이터셋 목록
     const std::vector<std::string> dataset_names = {
         "ASIC_100k", "bcsstk32", "cant", "consph", 
-        "crankseg_2", "ct20stif", "G2_circuit", "lhr71",
+        "crankseg_2", "ct20stif",  "lhr71",
         "ohne2", "pdb1HYS", "pwtk", "rma10",
-        "shipsec1", "soc-sign-epinions", "sorted_consph",
+        "shipsec1", "soc-sign-epinions", 
         "Stanford", "webbase-1M", "xenon2"
     };
 
@@ -337,11 +337,8 @@ int main() {
     // 각 데이터셋별 처리
     for (const auto& dataset : dataset_names) {
         // 1. 파일 경로 설정
-        const std::string base_path = "./suite/partitioned_default/" + dataset + "/partition_";
-        const std::string output_path = "draf_dat/tiled_draf_" + dataset + ".dat";
-
         // 2. DRAF 저장 벡터 초기화
-        std::vector<re_aligned_dram_format> draf_result(num_tiles);
+		std::vector<std::vector<re_aligned_dram_format>> draf_result(num_tiles);
         uint32_t max_size = 0;
         uint32_t max_index = 0;
 
@@ -349,6 +346,8 @@ int main() {
         // If coo, csc format is stored, compare the memory usage
         // If draf format is stored, compare the memory usage
         std::string file_path = "./suite/sorted_suite/" + dataset + "_new.mtx";
+        //std::string file_path = "./suite/sorted_suite/" + dataset + "_new.mtx";
+
         COOMatrix matrix = readMTXFile(file_path);
         //Assume matrix value is stored in 16-bit unsigned integer
         //index are stored in 32-bit unsigned integer
@@ -364,16 +363,31 @@ int main() {
         int row_used = 0;
 
         // 3. 타일별 처리        
-        COOMatrix tile_matrix = readMTXFile(file_path);
-        uint32_t NEW_NNZ = tile_matrix.nnz;
+        //COOMatrix tile_matrix = readMTXFile(file_path);
+        //uint32_t NEW_NNZ = tile_matrix.nnz;
 
-        draf_result = spmv_format_transfer(
+       /* draf_result = spmv_format_transfer(
             tile_matrix.row_indices,
             tile_matrix.col_indices,
             tile_matrix.values,
             NEW_NNZ
-        );
-        row_used = draf_result.size();
+        );*/
+
+        const std::string base_path = "./suite/partitioned_default/" + dataset + "_new/partition_";
+        for (int tile = 0; tile < num_tiles; ++tile) {
+            std::string file_path = base_path + std::to_string(tile) + ".mtx";
+            
+            COOMatrix tile_matrix = readMTXFile(file_path);
+            uint32_t NEW_NNZ = tile_matrix.nnz;
+
+            draf_result[tile] = spmv_format_transfer(
+                tile_matrix.row_indices,
+                tile_matrix.col_indices,
+                tile_matrix.values,
+                NEW_NNZ
+            );
+			row_used += draf_result[tile].size();
+        }
 
         std::cout << "DRAF memory usage: " << row_used * 1024 << "Byte used" << std::endl;
         std::cout << "DRAF memory usage(except buffer):" << (row_used * 736) << "Byte used\n" << std::endl;

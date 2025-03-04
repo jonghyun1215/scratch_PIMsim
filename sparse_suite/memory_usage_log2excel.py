@@ -79,7 +79,7 @@ def parse_output(file_path):
 
 def main():
     # 출력 결과가 저장된 텍스트 파일 경로 (예: output.txt)
-    file_path = "memory_usage.log"
+    file_path = "memory_usage_unoptimized.log"
     data = parse_output(file_path)
 
     # 데이터프레임으로 변환
