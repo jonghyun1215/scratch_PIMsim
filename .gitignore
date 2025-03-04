@@ -20,6 +20,7 @@ sparse_suite/*.mtx
 sparse_suite/matplotlib-cpp/
 *.mtx
 *.swp
+*.pdf
 hardware/
 !/hardware/src/
 
