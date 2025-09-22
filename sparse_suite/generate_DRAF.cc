@@ -496,11 +496,17 @@ bool compareResults(
 int main() {
     // 처리할 데이터셋 목록
     const std::vector<std::string> dataset_names = {
-        "ASIC_100k", "bcsstk32", "cant", "consph", 
-        "crankseg_2", "ct20stif", "G2_circuit", "lhr71",
-        "ohne2", "pdb1HYS", "pwtk", "rma10",
-        "shipsec1", "soc-sign-epinions", "sorted_consph",
-        "Stanford", "webbase-1M", "xenon2"
+        "cora",
+        "citeseer",
+        "amazon-photo",
+        "amazon-com",
+        "Pubmed",
+        "corafull",
+        "coauthor-phy",
+        "coauthor-cs",
+        "cornell",
+        "chameleon",
+        "squirrel"
     };
 
     const int num_tiles = 64;
@@ -508,7 +514,7 @@ int main() {
     // 각 데이터셋별 처리
     for (const auto& dataset : dataset_names) {
         // 1. 파일 경로 설정
-        const std::string base_path = "./suite/partitioned_default/" + dataset + "_new/partition_";
+        const std::string base_path = "./suite/partitioned_default/" + dataset + "/partition_";
         const std::string output_path = "draf_dat/tiled_draf_" + dataset + ".dat";
 
         // 2. DRAF 저장 벡터 초기화

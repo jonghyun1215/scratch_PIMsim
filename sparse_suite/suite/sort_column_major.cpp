@@ -70,14 +70,25 @@ void processMtxFile(const std::string& inputFileName, const std::string& outputF
 
 int main() {
     std::vector<std::string> fileNames = {
-        "Stanford.mtx", "G2_circuit.mtx", "bcsstk32.mtx", "cant.mtx", "consph.mtx",
-        "crankseg_2.mtx", "ct20stif.mtx", "lhr71.mtx", "ohne2.mtx", "pdb1HYS.mtx",
-        "pwtk.mtx", "rma10.mtx", "shipsec1.mtx", "soc-sign-epinions.mtx",
-        "sorted_consph.mtx", "webbase-1M.mtx", "xenon2.mtx", "ASIC_100k.mtx"
+        // "Stanford.mtx", "G2_circuit.mtx", "bcsstk32.mtx", "cant.mtx", "consph.mtx",
+        // "crankseg_2.mtx", "ct20stif.mtx", "lhr71.mtx", "ohne2.mtx", "pdb1HYS.mtx",
+        // "pwtk.mtx", "rma10.mtx", "shipsec1.mtx", "soc-sign-epinions.mtx",
+        // "sorted_consph.mtx", "webbase-1M.mtx", "xenon2.mtx", "ASIC_100k.mtx"
+        "cora.mtx",
+        "citeseer.mtx",
+        "amazon-photo.mtx",
+        "amazon-com.mtx",
+        "Pubmed.mtx",
+        "corafull.mtx",
+        "coauthor-phy.mtx",
+        "coauthor-cs.mtx",
+        "cornell.mtx",
+        "chameleon.mtx",
+        "squirrel.mtx"
     };
 
     for (const auto& fileName : fileNames) {
-        std::string outputFileName = "sorted_suite/"+ fileName.substr(0, fileName.find_last_of('.')) + "_new.mtx";
+        std::string outputFileName = "sorted_suite/"+ fileName.substr(0, fileName.find_last_of('.')) + ".mtx";
         processMtxFile(fileName, outputFileName);
     }
 

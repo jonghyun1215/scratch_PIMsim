@@ -82,6 +82,7 @@ class TransactionGenerator {
     virtual void GetResult() = 0;
     virtual void CheckResult() = 0;
     virtual void AdditionalAccumulation() = 0;
+    virtual void ChangeVector() = 0;
 
    //아래에 있는 Function들은 모든 transacion generator에서 사용할 수 있는 함수들
    //위의 함수는 override를 하여, 사용하는 경우의 transaction generator가 각각 정의
@@ -124,6 +125,7 @@ class SpmvTransactionGenerator : public TransactionGenerator {
     void GetResult() override;
     void AdditionalAccumulation() override;
     void CheckResult() override {};
+    void ChangeVector() override;
 
     uint8_t *partial_index_;
     uint8_t *partial_value_;
@@ -157,6 +159,7 @@ class NoPIMSpmvTransactionGenerator : public TransactionGenerator {
       void GetResult() override;
       void AdditionalAccumulation() override {};
       void CheckResult() override {};
+      void ChangeVector() override {};
   
       uint8_t *partial_index_;
       uint8_t *partial_value_;
@@ -193,6 +196,7 @@ class CPUSpmvTransactionGenerator : public TransactionGenerator {
     void GetResult() override {};
     void CheckResult() override {};
     void AdditionalAccumulation() override{};
+    void ChangeVector() override {};
 
  private:
     void ExecuteBank(int bank, int batch);

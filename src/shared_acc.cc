@@ -51,20 +51,24 @@ uint64_t SharedAccumulator::ReverseAddressMapping(Address& addr) {
 //Index Queue에 데이터를 넣는 함수
 //MOV 명령어 시행시 DRAM row에서 데이터를 받아와야 함
 //이때, DRAM row에서 받아온 데이터를 Index Queue에 넣어주는 함수
-//L_indices와 R_indices는 각각 PimUnit 1과 연결된 Bansk PimUnit 2와 연결된 Bank에서 받아온 데이터
-void SharedAccumulator::loadIndices(uint32_t *L_indices, uint32_t *R_indices) {
+//L_indices와 R_indices는 각각 PimUnit 1과 연결된 Bansk PimUnit 2와 연결된 Bank에서 받아온 데이터)
+void SharedAccumulator::loadIndices(uint64_t hex_addr, uint32_t *L_indices, uint32_t *R_indices) {
     //std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
+    //DRAM의 column address를 기반으로 GRF access index를 결정할 수 있도록 offset 도입
+    Address addr = config_.AddressMapping(hex_addr);
+    uint32_t offset = (addr.column - 8) * 4;
     for (size_t i = 0; i < 8; i++) {
         //std::cout << " SA: L_indices[" << i << "]: " << L_indices[i]<<" ";
         if(L_indices[i] != 0){
-            L_IQ.push(Element(i,L_indices[i]));
+            L_IQ.push(Element(i+offset,L_indices[i]));
         }
     }
+
     //std::cout << std::endl;
     for (size_t i = 0; i < 8 /*R_indices.size()*/; i++) {
         //std::cout << "SA: R_indices[" << i << "]: " << R_indices[i] <<" ";
         if(R_indices[i] != 0){
-            R_IQ.push(Element(i,R_indices[i]));
+            R_IQ.push(Element(i+offset,R_indices[i]));
         }
     }
     //std::cout << "\n\n";
@@ -72,19 +76,22 @@ void SharedAccumulator::loadIndices(uint32_t *L_indices, uint32_t *R_indices) {
 
 //Index Queue에 데이터를 넣는 함수2
 //위와 설명은 동일 BUT 두 번째 SACC 실행시 index가 0 ~ 7이 아닌 8 ~ 15로 들어와야 됨
-void SharedAccumulator::loadIndices_2(uint32_t *L_indices, uint32_t *R_indices) {
+void SharedAccumulator::loadIndices_2(uint64_t hex_addr, uint32_t *L_indices, uint32_t *R_indices) {
     //std::cout << "SA: Data loaded to Shared Accumulator ID: " << SA_id << std::endl;
-    for (size_t i = 8; i < 15; i++) {
+    //DRAM의 column address를 기반으로 GRF access index를 결정할 수 있도록 offset 도입
+    Address addr = config_.AddressMapping(hex_addr);
+    uint32_t offset = (addr.column - 9) * 4;
+    for (size_t i = 8; i < 16; i++) {
         //std::cout << " SA: L_indices[" << i << "]: " << L_indices[i-8]<<" ";
         if(L_indices[i] != 0){
-            L_IQ.push(Element(i,L_indices[i]));
+            L_IQ.push(Element(i+offset,L_indices[i]));
         }
     }
     //std::cout << std::endl;
-    for (size_t i = 8; i < 15 /*R_indices.size()*/; i++) {
+    for (size_t i = 8; i < 16 /*R_indices.size()*/; i++) {
         //std::cout << "SA: R_indices[" << i << "]: " << R_indices[i-8] <<" ";
         if(R_indices[i] != 0){
-            R_IQ.push(Element(i,R_indices[i]));
+            R_IQ.push(Element(i+offset,R_indices[i]));
         }
     }
     //std::cout << "\n\n";
@@ -242,7 +249,7 @@ void SharedAccumulator::runSimulation(uint64_t hex_addr) {
 
     //std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
     // TW added flush at 2025.02.22
-    // QUEUE가 32개 이상이 되면 flush (64 일때 보다 성능이 좋게 나옴)
+    // QUEUE가 8개를 넘어서서 데이터가 존재하면 flush
     if(L_IQ.size() > MAX_QUEUE_SIZE /2 || R_IQ.size() > MAX_QUEUE_SIZE /2){
         std::cout << "L_IQ.size : " << L_IQ.size() << " R_IQ.size : " << R_IQ.size() << std::endl;
         std::cout << "SA ID: " << SA_id << " L_IQ & R_IQ flushed\n";

@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include <filesystem> 
 using namespace std;
 
 /******************************************************************************
@@ -319,6 +320,22 @@ void writePartitionsToMtx(const string& baseName,
                           const vector<int>& colIdx,
                           const vector<double>& vals)
 {
+    // 파일 쓰기를 시작하기 전에, 결과가 저장될 디렉토리가 있는지 확인하고 없으면 생성합니다.
+    if (k > 0 && !assignments.empty()) {
+        try {
+            filesystem::path outputPath(baseName);
+            filesystem::path outputDir = outputPath.parent_path();
+            if (!outputDir.empty() && !filesystem::exists(outputDir)) {
+                if (filesystem::create_directories(outputDir)) {
+                    cerr << "[INFO] Created directory: " << outputDir.string() << "\n";
+                }
+            }
+        } catch (const filesystem::filesystem_error& e) {
+            cerr << "[ERROR] Filesystem error: " << e.what() << "\n";
+            return; // 디렉토리 생성 실패 시 함수 종료
+        }
+    }
+
     vector<vector<int>> partRows(k), partCols(k);
     vector<vector<double>> partVals(k);
 
@@ -495,32 +512,43 @@ int main(){
     // -------------------------------
     // 2) 원본 .mtx 파일들이 있는 경로 + 파일명
     // -------------------------------
-    const string basePath = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/sorted_suite/";
+    const string basePath = "/home/jonghyun/sparsePIM/scratch_PIMsim/sparse_suite/suite/sorted_suite/";
 
     // 처리할 mtx 파일 목록
     vector<string> mtxFiles = {
-        "ASIC_100k_new.mtx",
-        "Stanford_new.mtx",
-        "bcsstk32_new.mtx",
-        "consph_new.mtx",
-        "ct20stif_new.mtx",
-        "ohne2_new.mtx",
-        "pwtk_new.mtx",
-        "shipsec1_new.mtx",
-        "xenon2_new.mtx",
-        "cant_new.mtx",
-        "crankseg_2_new.mtx",
-        "lhr71_new.mtx",
-        "pdb1HYS_new.mtx",
-        "rma10_new.mtx",
-        "soc-sign-epinions_new.mtx",
-        "webbase-1M_new.mtx"
+        // "ASIC_100k_new.mtx",
+        // "Stanford_new.mtx",
+        // "bcsstk32_new.mtx",
+        // "consph_new.mtx",
+        // "ct20stif_new.mtx",
+        // "ohne2_new.mtx",
+        // "pwtk_new.mtx",
+        // "shipsec1_new.mtx",
+        // "xenon2_new.mtx",
+        // "cant_new.mtx",
+        // "crankseg_2_new.mtx",
+        // "lhr71_new.mtx",
+        // "pdb1HYS_new.mtx",
+        // "rma10_new.mtx",
+        // "soc-sign-epinions_new.mtx",
+        // "webbase-1M_new.mtx"
+        "cora.mtx",
+        "citeseer.mtx",
+        "amazon-photo.mtx",
+        "amazon-com.mtx",
+        "Pubmed.mtx",
+        "corafull.mtx",
+        "coauthor-phy.mtx",
+        "coauthor-cs.mtx",
+        "cornell.mtx",
+        "chameleon.mtx",
+        "squirrel.mtx"
     };
 
     // -------------------------------
     // 3) 결과를 저장할 폴더 (이미 존재한다고 가정)
     // -------------------------------
-    const string outRoot = "/home/taewoon/second_drive/scratch_PIMsim/sparse_suite/suite/partitioned_default/";
+    const string outRoot = "/home/jonghyun/sparsePIM/scratch_PIMsim/sparse_suite/suite/partitioned_default/";
 
     // -------------------------------
     // 4) 각 파일에 대해 처리

@@ -34,9 +34,9 @@ public:
     SharedAccumulator(Config &config, int id, PimUnit& pim1, PimUnit& pim2);
 
     // Additional methods
-    void loadIndices(uint32_t *L_indices, uint32_t *R_indices);
+    void loadIndices(uint64_t hex_addr, uint32_t *L_indices, uint32_t *R_indices);
     //새롭게 하위 8개의 index를 받아오기 위해 추가 됨
-    void loadIndices_2(uint32_t *L_indices, uint32_t *R_indices);
+    void loadIndices_2(uint64_t hex_addr, uint32_t *L_indices, uint32_t *R_indices);
     void simulateStep();
     void loadUnit(int index_l, int index_r);
     void runSimulation(uint64_t hex_addr);
