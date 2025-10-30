@@ -47,6 +47,7 @@ class PimUnit {
     void SetSrf(uint64_t hex_addr, uint8_t* DataPtr);
     void SetGrf(uint64_t hex_addr, uint8_t* DataPtr);
     void SetCrf(uint64_t hex_addr, uint8_t* DataPtr);
+    void SetDrf(uint64_t hex_addr, uint8_t* DataPtr); // JH added
     void init(uint8_t* pmemAddr, uint64_t pmemAddr_size,
               unsigned int burstSize);
     bool DebugMode();
@@ -77,6 +78,9 @@ class PimUnit {
     unit_t *GRF_B_;
     unit_t *SRF_A_;
     unit_t *SRF_M_; //2B * 8 = 16B
+
+    // JH added
+    unit_t *DRF; // 512B
 
     unit_t *dst;
     unit_t *src0;

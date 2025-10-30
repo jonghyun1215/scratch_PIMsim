@@ -504,7 +504,7 @@ int main(){
     // -------------------------------
     // 1) 파라미터
     // -------------------------------
-    const int K = 64;
+    const int K = 128; // ch x bg x oddbank = 32 x 4 x 2 = 256, base 64
     const int KM_ITER = 30;
     const int BAL_ITER = 5;
     const float DELTA = 0.025f;

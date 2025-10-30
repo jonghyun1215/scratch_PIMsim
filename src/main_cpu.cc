@@ -69,6 +69,15 @@ int main(int argc, const char **argv) {
         tx_generator = new CPUSpmvTransactionGenerator(config_file, output_dir, 
             original_matrix.n_rows, original_matrix.n_cols, original_matrix.nnz, miss_ratio_arg);
     }
+
+    // JH added
+        if(pim_api == "spmm"){
+        std::cout << "main_pim.cc: spmm api " << std::endl;
+        uint8_t *A = (uint8_t *) malloc(sizeof(uint16_t)); //Input
+        COOMatrix original_matrix = readMTXFile("../sparse_suite/suite/cant.mtx");        
+    }
+
+
     std::cout << C_GREEN << "Success Module Initialize" << C_NORMAL << "\n\n";
 
     uint64_t clk;

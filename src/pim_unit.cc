@@ -163,6 +163,14 @@ void PimUnit::SetGrf(uint64_t hex_addr, uint8_t* DataPtr) {
     }
 }
 
+// JH added
+// Set DRF
+void PimUnit::SetDrf(uint64_t hex_addr, uint8_t* DataPtr) {
+    if (DebugMode()) std::cout << "  PU: SetDrf\n";
+    Address addr = config_.AddressMapping(hex_addr);
+    memcpy(DRF, DataPtr, 512); //WORD_SIZE = 32Byte
+}
+
 // Set pim_unit's CRF Register
 //  32bit inst x 8 = 32Byte data 
 //  Column Address 0 data is written to CRF 0~7
@@ -178,6 +186,7 @@ void PimUnit::SetCrf(uint64_t hex_addr, uint8_t* DataPtr) {
         PushCrf(CRF_idx+i, DataPtr + 4*i);
     }
 }
+
 
 // Map 32-bit data into structure of PIM_INSTRUCTION
 void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
