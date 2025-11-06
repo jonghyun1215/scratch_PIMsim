@@ -29,6 +29,9 @@ def op_code(word):
     elif "SACC" in word: #TW added
         ARIT_FLAG = 1
         return 0b1100 << 28 #12
+    elif "LOOP" in word: # JH added
+        FLOW_FLAG = 1
+        return 0b1101 << 28 #13
     else:
         raise
 
@@ -55,6 +58,8 @@ def src_code(word, loc):
         out = 0b011 << shifter
     elif "SRF_M" in word:
         out = 0b100 << shifter
+    elif "DRF" in word:
+        out = 0b101 << shifter # JH added
     else:
         idx_shifter = 11 - loc * 11
     

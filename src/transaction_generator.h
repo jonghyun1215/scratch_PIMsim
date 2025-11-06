@@ -37,7 +37,7 @@
 // 0x3ff9 is reserved for global accumulator
 #define TRIGGER_GACC       0x3ff9
 // JH added
-#define MAP_SPMR             0x3ff8 // specific mode for SpMM
+#define MAP_PPMR             0x3ff8 // partitioned pim mode for SpMM
 #define MAP_DRF              0x3ff7 // Dense register file
 
 #define C_NORMAL "\033[0m"

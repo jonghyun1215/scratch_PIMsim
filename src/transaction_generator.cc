@@ -94,6 +94,16 @@ void TransactionGenerator::Barrier() {
 
 void SpmmTransactionGenerator::Initialize() {
 
+    ukernel[0]=0b01001000010000001000000000000000;  // MOV(AAM0) SRF_M GRF_A           
+    ukernel[1]=0b10010101011000001000000000000000;  // MUL_DRF(AAM0) GRF_B DRF SRF_M   
+    ukernel[2]=0b10000100100100001000000000000000;  // ADD(AAM0) GRF_B GRF_B GRF_B
+    ukernel[3]=0b11010000010001000101000010100000;  // LOOP -2 GRF_A[2]                
+    ukernel[4]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
+    ukernel[5]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
+    ukernel[6]=0b00010000000001000110100000001111;  // JUMP -5 7                       
+    ukernel[7]=0b01000000100000001000000000000000;  // MOV(AAM0) BANK GRF_B            
+    ukernel[8]=0b00010000000001000100100000001111;  // JUMP -1 7                       
+    ukernel[9]=0b00100000000000000000000000000000;  // EXIT
 }
 void SpmmTransactionGenerator::SetData() {
     // strided size of one operand with one computation part(minimum)
