@@ -3,6 +3,7 @@
 #include "./../ext/headers/args.hxx"
 #include "./transaction_generator.h"
 #include "half.hpp"
+#include "../sparse_suite/sw_full_stack.h"
 
 using namespace dramsim3;
 using half_float::half;
@@ -60,6 +61,9 @@ int main(int argc, const char **argv) {
     std::string dat_filename = sw_opt 
         ? "../sparse_suite/draf_dat/tiled_draf_" + matrix_base + ".dat"
         : "../sparse_suite/wo_sw_opt_dat/" + matrix_base + ".dat";
+
+    std::string b0_filename = "../sparse_suite/spformat_b0/tiled_sp_" + matrix_base + ".dat";
+    std::string b2_filename = "../sparse_suite/spformat_b2/tiled_sp_" + matrix_base + ".dat";
     
     // Initialize modules of PIM-Simulator
     std::cout << C_GREEN << "Initializing modules..." << C_NORMAL << std::endl;
@@ -89,6 +93,20 @@ int main(int argc, const char **argv) {
 
         tx_generator = new NoPIMSpmvTransactionGenerator(config_file, output_dir,
                                                     DRAF_BG, output_vector);
+    }
+    else if (pim_api == "spmm") { // JH added
+        std::vector<std::vector<sparse_row_format>> BG_tile_bk0;
+        std::vector<std::vector<sparse_row_format>> BG_tile_bk2;
+        BG_tile_bk0 = loadSparseFromFile(b0_filename, 64);
+        BG_tile_bk2 = loadSparseFromFile(b2_filename, 64);
+
+        COOMatrixInfo matrix = readMTXFileInformation(mtx_filename);
+        int m = matrix.n_rows;
+        // output demension m x 128
+        uint16_t *output_matrix = (uint16_t *) malloc(sizeof(uint16_t) * m * 128);
+
+        tx_generator = new SpmmTransactionGenerator(config_file, output_dir,
+                                                    BG_tile_bk0, BG_tile_bk2, output_matrix);
     }
 
     std::cout << C_GREEN << "Success Module Initialize" << C_NORMAL << "\n\n";

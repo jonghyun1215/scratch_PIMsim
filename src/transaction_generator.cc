@@ -92,6 +92,98 @@ void TransactionGenerator::Barrier() {
     memory_system_.SetWriteBufferThreshold(-1);
 }
 
+void SpmmTransactionGenerator::Initialize() {
+
+}
+void SpmmTransactionGenerator::SetData() {
+    // strided size of one operand with one computation part(minimum)
+    // UNIT_SIZE = 2, SIZE_WORD = 32, NUM_BANK = 256
+    // strided_size = 2 * 32 * 256 = 16384
+
+    #ifdef debug_mode
+    std::cout << "HOST:\tSet input data...\n";
+    #endif
+    if (B0_data_.size() != B2_data_.size()) {
+        std::cout << "SpMM partitioning error \n";
+        return;
+    }
+    // --- B0_data_를 Bank 0에 할당 ---
+    // 16(ch) * 4(bg) = 64개의 (채널, 뱅크그룹) 조합을 순회
+    for (size_t i = 0; i < B0_data_.size(); ++i) {
+        uint32_t bg = i % 4;          // BankGroup (0, 1, 2, 3)
+        uint32_t current_ch = i / 4;  // Channel (0 ~ 15)
+        
+        // 현재 (ch, bg)에 할당된 모든 블록(j)을 순회
+        for (size_t j = 0; j < B0_data_[i].size(); ++j) {
+            // 1. Bank(ba)를 0으로 고정합니다.
+            uint32_t ba = 0;
+            //    (각 블록이 bank 0의 새 row에 매핑됨)
+            uint32_t ro = (uint32_t)j; 
+            uint32_t co = 0;          // Column (기존 로직 유지)
+
+            const sparse_row_format& element = B0_data_[i][j];
+            const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&element);
+            
+            for (co = 0; co < 32; co++) { // 1KB 전부 다 씀
+                // Address 생성 시 ba는 항상 0입니다.
+                Address addr(current_ch, 0, bg, ba, ro, co); // (rank=0)
+                uint64_t hex_addr = ReverseAddressMapping(addr); 
+                TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
+            }
+        }
+        
+        for (size_t j = 0; j < B2_data_[i].size(); ++j) {
+            // 1. Bank(ba)를 2로 고정합니다.
+            uint32_t ba = 2;
+            uint32_t ro = (uint32_t)j; 
+            uint32_t co = 0;
+
+            const sparse_row_format& element = B2_data_[i][j];
+            const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&element);
+            
+            for (co = 0; co < 32; co++) { // 1KB 전부 다 씀
+                Address addr(current_ch, 0, bg, ba, ro, co); // (rank=0으로 가정)
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
+            }
+        }
+    }
+
+    //exit(1);
+    std::cout << "SetData Done" << std::endl;
+    Barrier();
+
+    // Mode transition: SB -> AB
+    #ifdef debug_mode
+    std::cout << "\nHOST:\t[1] SB -> AB \n";
+    #endif
+    for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+        Address addr(ch, 0, 0, 0, MAP_ABMR, 0);
+        uint64_t hex_addr = ReverseAddressMapping(addr);
+        TryAddTransaction(hex_addr, false, data_temp_);
+    }
+    Barrier();
+
+    // Program μkernel into CRF register
+    #ifdef debug_mode
+    std::cout << "\nHOST:\tProgram SpMV μkernel \n";
+    #endif
+    for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+        for (int co = 0; co < 3; co++) { //for (int co = 0; co < 1; co++) {
+            Address addr(ch, 0, 0, 0, MAP_CRF, co);
+            uint64_t hex_addr = ReverseAddressMapping(addr);
+            // TryAddTransaction(hex_addr, true, (uint8_t*)&ukernel_spmv_[co*8]);
+        }
+    }
+    Barrier();
+}
+void SpmmTransactionGenerator::Execute() {
+
+}
+void SpmmTransactionGenerator::GetResult() {
+
+}
+
 ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////
 //////////////////////TW added//////////////////////////////////

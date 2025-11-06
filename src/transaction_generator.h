@@ -36,6 +36,9 @@
 // TW added
 // 0x3ff9 is reserved for global accumulator
 #define TRIGGER_GACC       0x3ff9
+// JH added
+#define MAP_SPMR             0x3ff8 // specific mode for SpMM
+#define MAP_DRF              0x3ff7 // Dense register file
 
 #define C_NORMAL "\033[0m"
 #define C_RED    "\033[031m"
@@ -213,6 +216,43 @@ class CPUSpmvTransactionGenerator : public TransactionGenerator {
 };
 
 //TW added end
+
+// JH added
+class SpmmTransactionGenerator : public TransactionGenerator {
+ public:
+   SpmmTransactionGenerator(const std::string& config_file,
+                             const std::string& output_dir,
+                             std::vector<std::vector<sparse_row_format>> B0_data,
+                             std::vector<std::vector<sparse_row_format>> B2_data,
+                             uint16_t *output_matrix)
+        : TransactionGenerator(config_file, output_dir),
+          B0_data_(B0_data), B2_data_(B2_data), output_matrix_(output_matrix){}
+    void Initialize() override;
+    void SetData() override;
+    void Execute() override;
+    void GetResult() override;
+   //  void AdditionalAccumulation() override;
+    void CheckResult() override {};
+   //  void ChangeVector() override;
+
+    uint8_t *partial_index_;
+    uint8_t *partial_value_;
+
+ private:
+    void ExecuteBank(int bank);
+
+    std::vector<std::vector<sparse_row_format>> B0_data_;
+    std::vector<std::vector<sparse_row_format>> B2_data_;
+    uint16_t *output_matrix_;
+    uint32_t kernel_execution_time_;
+    //uint64_t m_, n_; //Matrix의 크기를 전달하기 위한 코드
+    uint64_t addr_B0_, addr_B2_, addr_output_matrix_;
+    uint64_t ukernel_access_size_;
+    uint64_t ukernel_count_per_pim_;
+    uint32_t *ukernel_spmm_;
+    uint32_t *ukernel_spmm_last_;
+};
+
 
 }  // namespace dramsim3
 

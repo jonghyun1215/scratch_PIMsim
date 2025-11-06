@@ -9,6 +9,10 @@
 #include <algorithm>
 #include "sw_full_stack.h"
 
+#include <cstdint>      // uint32_t, uint16_t를 위해
+#include <numeric>      // std::iota를 위해
+#include <limits>       //
+
 #define DEBUG 0
 #define STORE 0
 
@@ -106,7 +110,7 @@ COOMatrixInfo readMTXFileInformation(const std::string& file_path) {
 
 //저장 된 sw optimization 결과를 불러오기 위한 코드(여기가 아닌 다른 곳에서 사용)
 //dat 확장자로 구성 된 파일을 불러올 때 사용
-std::vector<std::vector<re_aligned_dram_format>> loadResultFromFile(const std::string& filename, int num_BG) {
+std::vector<std::vector<sparse_row_format>> loadSparseFromFile(const std::string& filename, int num_BG) {
     std::ifstream inFile(filename, std::ios::binary);
 
     if (!inFile.is_open()) {
@@ -114,7 +118,7 @@ std::vector<std::vector<re_aligned_dram_format>> loadResultFromFile(const std::s
         return {};
     }
 
-    std::vector<std::vector<re_aligned_dram_format>> result;
+    std::vector<std::vector<sparse_row_format>> result;
 
     // Load the number of outer vectors
     uint32_t outerSize;
@@ -129,19 +133,17 @@ std::vector<std::vector<re_aligned_dram_format>> loadResultFromFile(const std::s
 
         result[i].resize(innerSize);
 
-        // Load each re_aligned_dram_format
+        // Load each sparse_row_format
         for (uint32_t j = 0; j < innerSize; ++j) {
-            inFile.read(reinterpret_cast<char*>(&result[i][j]), sizeof(re_aligned_dram_format));
+            inFile.read(reinterpret_cast<char*>(&result[i][j]), sizeof(sparse_row_format));
         }
     }
 
     inFile.close();
-    if(DEBUG)
-        std::cout << "Data successfully loaded from " << filename << std::endl;
+    std::cout << "Data successfully loaded from " << filename << std::endl;
 
     return result;
 }
-
 
 // Function to split the matrix column-wise into `num_tiles`
 std::vector<COOMatrix> splitMatrixColumnWise(const COOMatrix& matrix, int num_tiles) {
@@ -173,189 +175,15 @@ std::vector<COOMatrix> splitMatrixColumnWise(const COOMatrix& matrix, int num_ti
     return tiles;
 }
 
-// Function to compare a tile file with the original matrix
-bool compareTileFileWithOriginal(const COOMatrix& original, const std::string& tile_file_path,
-                                 uint32_t start_col, uint32_t end_col) {
-    COOMatrix tile = readMTXFile(tile_file_path);
-
-    for (size_t i = 0; i < tile.nnz; ++i) {
-        uint32_t tile_row = tile.row_indices[i];
-        uint32_t tile_col = tile.col_indices[i];
-        uint16_t tile_value = tile.values[i];
-
-        // Check if the tile's column is within the expected range
-        if (tile_col < start_col || tile_col >= end_col) {
-            std::cout << "Error: Tile column " << tile_col << " is out of range (" << start_col << ", " << end_col << ")." << std::endl;
-            return false;
-        }
-
-        // Verify that the tile data matches the original matrix
-        bool found = false;
-        for (size_t j = 0; j < original.nnz; ++j) {
-            if (original.row_indices[j] == tile_row &&
-                original.col_indices[j] == tile_col &&
-                original.values[j] == tile_value) {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            std::cout << "Mismatch found: (row, col, value) = (" << tile_row << ", " << tile_col << ", " << tile_value << ")" << std::endl;
-            return false;
-        }
-    }
-
-    return true;
-}
-
-
-// Function to save a COO matrix to an MTX file
-void saveCOOMatrixToMTX(const std::string& file_path, const COOMatrix& matrix) {
-    std::ofstream file(file_path);
-    if (!file.is_open()) {
-        throw std::runtime_error("Unable to open file for writing: " + file_path);
-    }
-
-    // Write the header
-    file << "%%MatrixMarket matrix coordinate real general\n";
-    file << matrix.n_rows << " " << matrix.n_cols << " " << matrix.nnz << "\n";
-
-    // Write the COO data
-    for (size_t i = 0; i < matrix.row_indices.size(); ++i) {
-        file << matrix.row_indices[i] + 1 << " "  // Convert back to 1-based indexing
-             << matrix.col_indices[i] + 1 << " "
-             << matrix.values[i] << "\n";
-    }
-
-    file.close();
-    std::cout << "Saved COO matrix to file: " << file_path << std::endl;
-}
 
 ////////////////////////FORMAT TRANSFER////////////////////////
 ////////////////////////FORMAT TRANSFER////////////////////////
 ////////////////////////FORMAT TRANSFER////////////////////////
 ////////////////////////FORMAT TRANSFER////////////////////////
 ////////////////////////FORMAT TRANSFER////////////////////////
-typedef struct align_row_buffer{
-    uint16_t val[PARTITION_SIZE]; //actual type is fp16 not float
-    uint32_t row[PARTITION_SIZE];
-}align_row_buffer;
-
-typedef struct align_dram_row{
-    uint32_t col_group[GROUP_SIZE];
-    uint32_t row_buffer_empty; //if 1KB -> uint32_t
-    align_row_buffer row_buffer[GROUP_SIZE];
-    uint16_t result[GROUP_SIZE * PARTITION_SIZE];
-}align_dram_row;
-
-// re_aligned_dram_format is the final format to store in DRAM
-// re_aligned format is stored in header file
-std::vector<re_aligned_dram_format> spmm_format_transfer(
-    std::vector<uint32_t>& row_indices, std::vector<uint32_t>& col_indices, std::vector<uint16_t>& val, uint32_t& NEW_NNZ) 
-{
-    std::vector<align_row_buffer> row_buffer(NEW_NNZ);
-    std::vector<uint32_t> col_index(NEW_NNZ, 0);
-    uint32_t t = 0;
-    uint32_t nnz_count = 0;
-
-    // Initialize row_buffer
-    for(auto& buffer : row_buffer) {
-        for(uint32_t j = 0; j < PARTITION_SIZE; j++) {
-            buffer.row[j] = 0;
-            buffer.val[j] = 0;
-        }
-    }
-    if(DEBUG) std::cout << "row buffer initialized" << std::endl;
-
-    int index = 0;
-    for(uint32_t i = 0; i < NEW_NNZ; i++) {
-        uint32_t row = row_indices[i];
-        uint32_t col = col_indices[i];
-        uint16_t value = val[i];
-
-        index = nnz_count % PARTITION_SIZE;
-        if(col_index[t] != col && index != 0) {
-            t++;
-            nnz_count = 0;
-            index = nnz_count % PARTITION_SIZE;
-        }
-        if(index == 0 && nnz_count != 0) {
-            t++;
-        }
-
-        if (t >= col_index.size()) {
-            col_index.resize(t + 1);
-            row_buffer.resize(t + 1);
-        }
-        
-        col_index[t] = col;
-        row_buffer[t].row[index] = row;
-        row_buffer[t].val[index] = value;
-        nnz_count++;
-    }
-    if(DEBUG) std::cout << "row buffer filled" << std::endl;
-
-    // Define dram_row vector
-    std::vector<align_dram_row> dram_row((t / GROUP_SIZE) + 1);
-
-    // Initialize dram_row
-    for(auto& row : dram_row) {
-        for(uint32_t j = 0; j < GROUP_SIZE; j++) {
-            for(int k = 0; k < PARTITION_SIZE; k++) {
-                row.row_buffer[j].row[k] = 0;
-                row.row_buffer[j].val[k] = 0;
-            }
-            row.col_group[j] = 0;
-        }
-        row.row_buffer_empty = 0;
-    }
-    if(DEBUG) std::cout << "dram row initialized" << std::endl;
-
-    // Fill dram_row
-    for(size_t i = 0; i <= t; i++) {
-        int row_index = i / GROUP_SIZE;
-        int buffer_index = i % GROUP_SIZE;
-        dram_row[row_index].row_buffer[buffer_index] = row_buffer[i];
-        dram_row[row_index].col_group[buffer_index] = col_index[i];
-    }
-    if(DEBUG) std::cout << "dram row filled" << std::endl;
-
-    // Define store_format vector
-    std::vector<re_aligned_dram_format> store_format((t / GROUP_SIZE) + 1);
-
-    // Fill store_format
-    for(uint32_t i = 0; i <= t / GROUP_SIZE; i++) {
-        for(uint32_t j = 0; j < GROUP_SIZE; j++) {
-            for(uint32_t k = 0; k < PARTITION_SIZE; k++) {
-                uint32_t buffer_index = j * PARTITION_SIZE + k;
-                store_format[i].row[buffer_index] = dram_row[i].row_buffer[j].row[k];
-                //store_format[i].val[buffer_index] = dram_row[i].row_buffer[j].val[k];
-                
-                // TW added
-                // TEST를 위해 추가함 우선 모든 value 값을 1로 설정
-                if(store_format[i].row[buffer_index] != 0)
-                    store_format[i].val[buffer_index] = 1;
-                else
-                    store_format[i].val[buffer_index] = 0;
-            }
-            store_format[i].col_group[j] = dram_row[i].col_group[j];
-            if(dram_row[i].col_group[j] != 0) {
-                store_format[i].vec[j] = 1;
-            }
-            else {
-                store_format[i].vec[j] = 0;
-            }
-            //store_format[i].vec[j] = vec[dram_row[i].col_group[j]]; // Assumes vec is defined elsewhere
-        }
-    }
-    if(DEBUG) std::cout << "store format filled" << std::endl;
-
-    return store_format;
-}
-
 //SW optimization 결과를 저장하기 위한 코드
-void saveResultToFile(const std::vector<std::vector<re_aligned_dram_format>>& result, const std::string& filename) {
+
+void saveSPTResultToFile(const std::vector<std::vector<sparse_row_format>>& result, const std::string& filename) {
     std::ofstream outFile(filename, std::ios::binary);
 
     if (!outFile.is_open()) {
@@ -374,7 +202,7 @@ void saveResultToFile(const std::vector<std::vector<re_aligned_dram_format>>& re
 
         // Save each re_aligned_dram_format
         for (const auto& format : group) {
-            outFile.write(reinterpret_cast<const char*>(&format), sizeof(re_aligned_dram_format));
+            outFile.write(reinterpret_cast<const char*>(&format), sizeof(sparse_row_format));
         }
     }
 
@@ -388,125 +216,236 @@ void saveResultToFile(const std::vector<std::vector<re_aligned_dram_format>>& re
 ////////////////////////FORMAT TRANSFER////////////////////////
 ////////////////////////FORMAT TRANSFER////////////////////////
 
+////////////////////////SPARSE FORMAT TRANSFER/////////////////
+////////////////////////SPARSE FORMAT TRANSFER/////////////////
+////////////////////////SPARSE FORMAT TRANSFER/////////////////
+COOMatrix sort_coo_by_row(
+    std::vector<uint32_t>& row_indices,
+    std::vector<uint32_t>& col_indices,
+    std::vector<uint16_t>& val,
+    uint32_t& NEW_NNZ 
+) {
+    // 1. 0부터 NEW_NNZ-1까지의 값을 갖는 순열(permutation) 벡터를 생성합니다.
+    std::vector<uint32_t> p(NEW_NNZ);
+    std::iota(p.begin(), p.end(), 0); // p = {0, 1, 2, ..., NEW_NNZ-1}
 
-////////////////////////CODE FOR DEBUGGING/////////////////////
-////////////////////////CODE FOR DEBUGGING/////////////////////
-////////////////////////CODE FOR DEBUGGING/////////////////////
-////////////////////////CODE FOR DEBUGGING/////////////////////
-////////////////////////CODE FOR DEBUGGING/////////////////////
-bool compareReAlignedDramFormat(const re_aligned_dram_format& a, const re_aligned_dram_format& b, int groupIndex, int elementIndex) {
-    // Compare col_group
-    for (size_t i = 0; i < GROUP_SIZE; ++i) {
-        if (a.col_group[i] != b.col_group[i]) {
-            std::cout << "Difference in col_group[" << i << "] at group " << groupIndex 
-                      << ", element " << elementIndex << ": " << a.col_group[i] 
-                      << " != " << b.col_group[i] << std::endl;
-            return false;
+    // 2. 이 순열 벡터 'p'를 정렬합니다.
+    // 정렬 기준(람다 함수)은 원본 'row_indices' 벡터의 값을 참조합니다.
+    std::sort(p.begin(), p.end(), [&](uint32_t i, uint32_t j) {
+        // 주 정렬 기준: 행 인덱스
+        if (row_indices[i] != row_indices[j]) {
+            return row_indices[i] < row_indices[j];
         }
+        // 보조 정렬 기준: 행이 같을 경우 열 인덱스 (안정적인 정렬)
+        return col_indices[i] < col_indices[j];
+    });
+
+    // 3. 반환할 COOMatrix 객체를 준비합니다.
+    COOMatrix sorted_matrix;
+    sorted_matrix.nnz = NEW_NNZ;
+    
+    // 벡터 공간을 미리 할당합니다. (효율성)
+    sorted_matrix.row_indices.resize(NEW_NNZ);
+    sorted_matrix.col_indices.resize(NEW_NNZ);
+    sorted_matrix.values.resize(NEW_NNZ);
+
+    uint32_t max_row = 0;
+    uint32_t max_col = 0;
+
+    // 4. 정렬된 순열 'p'를 기반으로 새로운 벡터를 채웁니다.
+    //    동시에 행과 열의 최대값을 찾아 행렬의 크기(n_rows, n_cols)를 추정합니다.
+    for (uint32_t i = 0; i < NEW_NNZ; ++i) {
+        uint32_t original_index = p[i]; // 정렬된 순서에 맞는 원본 인덱스
+
+        uint32_t r = row_indices[original_index];
+        uint32_t c = col_indices[original_index];
+        uint16_t v = val[original_index];
+
+        sorted_matrix.row_indices[i] = r;
+        sorted_matrix.col_indices[i] = c;
+        sorted_matrix.values[i] = v;
+
+        // n_rows와 n_cols를 결정하기 위해 최대 인덱스 추적
+        if (r > max_row) max_row = r;
+        if (c > max_col) max_col = c;
     }
 
-    // Compare row_buffer_empty
-    if (a.row_buffer_empty != b.row_buffer_empty) {
-        std::cout << "Difference in row_buffer_empty at group " << groupIndex 
-                  << ", element " << elementIndex << ": " << a.row_buffer_empty 
-                  << " != " << b.row_buffer_empty << std::endl;
-        return false;
-    }
+    // 5. 행렬의 크기를 설정합니다. (인덱스는 0부터 시작하므로 +1)
+    //    NZE가 하나도 없는 경우 0으로 설정합니다.
+    sorted_matrix.n_rows = (NEW_NNZ > 0) ? max_row + 1 : 0;
+    sorted_matrix.n_cols = (NEW_NNZ > 0) ? max_col + 1 : 0;
 
-    // Compare val
-    for (size_t i = 0; i < GROUP_SIZE * PARTITION_SIZE; ++i) {
-        if (a.val[i] != b.val[i]) {
-            std::cout << "Difference in val[" << i << "] at group " << groupIndex 
-                      << ", element " << elementIndex << ": " << a.val[i] 
-                      << " != " << b.val[i] << std::endl;
-            return false;
-        }
-    }
-
-    // Compare row
-    for (size_t i = 0; i < GROUP_SIZE * PARTITION_SIZE; ++i) {
-        if (a.row[i] != b.row[i]) {
-            std::cout << "Difference in row[" << i << "] at group " << groupIndex 
-                      << ", element " << elementIndex << ": " << a.row[i] 
-                      << " != " << b.row[i] << std::endl;
-            return false;
-        }
-    }
-
-    // Compare result
-    for (size_t i = 0; i < GROUP_SIZE * PARTITION_SIZE; ++i) {
-        if (a.result[i] != b.result[i]) {
-            std::cout << "Difference in result[" << i << "] at group " << groupIndex 
-                      << ", element " << elementIndex << ": " << a.result[i] 
-                      << " != " << b.result[i] << std::endl;
-            return false;
-        }
-    }
-
-    // Compare vec
-    for (size_t i = 0; i < GROUP_SIZE; ++i) {
-        if (a.vec[i] != b.vec[i]) {
-            std::cout << "Difference in vec[" << i << "] at group " << groupIndex 
-                      << ", element " << elementIndex << ": " << a.vec[i] 
-                      << " != " << b.vec[i] << std::endl;
-            return false;
-        }
-    }
-
-    // Compare empty
-    for (size_t i = 0; i < 41; ++i) {
-        if (a.empty[i] != b.empty[i]) {
-            std::cout << "Difference in empty[" << i << "] at group " << groupIndex 
-                      << ", element " << elementIndex << ": " << a.empty[i] 
-                      << " != " << b.empty[i] << std::endl;
-            return false;
-        }
-    }
-
-    return true;
+    return sorted_matrix;
 }
 
-bool compareResults(
-    const std::vector<std::vector<re_aligned_dram_format>>& result1,
-    const std::vector<std::vector<re_aligned_dram_format>>& result2) {
-    if (result1.size() != result2.size()) {
-        std::cout << "Difference in outer vector size: " 
-                  << result1.size() << " != " << result2.size() << std::endl;
-        return false; 
+std::vector<sparse_row_format> spmm_format_transfer(COOMatrix& sorted_coo) 
+{
+    std::vector<sparse_row_format> result_vector;
+    if (sorted_coo.nnz == 0) {
+        return result_vector; // 비어있는 경우 빈 벡터 반환
+    }
+    // C++11 스타일의 {} 초기화는 모든 멤버(n_row, n_chunk, 배열)를 0으로 초기화합니다.
+    sparse_row_format current_block = {};
+
+    uint32_t nze_idx = 0; // 전체 COO 데이터를 순회하는 인덱스
+
+    while (nze_idx < sorted_coo.nnz) {
+        
+        // 1. Row Grouping: 현재 행의 NZE들을 그룹화
+        uint32_t current_row_idx = sorted_coo.row_indices[nze_idx];
+        uint32_t row_start_nze_idx = nze_idx;
+        
+        // 현재 행이 끝나는 지점 탐색
+        while (nze_idx < sorted_coo.nnz && sorted_coo.row_indices[nze_idx] == current_row_idx) {
+            nze_idx++;
+        }
+        uint32_t row_end_nze_idx = nze_idx; // exclusive
+        uint32_t nze_count_for_this_row = row_end_nze_idx - row_start_nze_idx;
+
+        // 2. Segment Splitting: 이 행을 16개 NZE 단위의 세그먼트로 처리
+        uint32_t nze_processed_in_row = 0;
+        while (nze_processed_in_row < nze_count_for_this_row) {
+            
+            // 이 세그먼트가 처리할 NZE 수 (최대 16)
+            uint32_t nze_for_this_segment = std::min((uint32_t)16, nze_count_for_this_row - nze_processed_in_row);
+
+            // 3. Chunk Generation: 이 세그먼트에 필요한 리소스 계산
+            //    (row_desc 1개, col_chunk 0-1개)
+            uint32_t row_desc_needed = 1;
+            // NZE가 9개(CHUNK_SIZE)를 초과하면 1개의 column_chunk가 필요
+            uint32_t chunks_needed = (nze_for_this_segment > CHUNK_SIZE) ? 1 : 0;
+
+            // 4. Block Splitting: 현재 블록에 이 세그먼트를 추가할 수 있는지 확인
+            if (current_block.n_row + current_block.n_chunk + row_desc_needed + chunks_needed > MAX_BLOCK_PER_ROW) 
+            {
+                // 용량 초과. 현재 블록을 결과에 추가하고 새 블록 시작
+                result_vector.push_back(current_block);
+                current_block = {}; // 새 블록으로 리셋
+            }
+
+            // 5. Block Filling: 현재 블록에 세그먼트 데이터 채우기
+            
+            // 5-a. Row Descriptor 채우기
+            uint32_t segment_start_coo_idx = row_start_nze_idx + nze_processed_in_row;
+            row_descriptor rd = {}; // 0으로 초기화
+            rd.row_idx = current_row_idx;
+            rd.NZE_count = nze_for_this_segment;
+            // rd에 저장할 NZE 수 (최대 9개)
+            uint32_t nze_in_rd = std::min(nze_for_this_segment, (uint32_t)CHUNK_SIZE);
+
+            for (uint32_t i = 0; i < nze_in_rd; ++i) {
+                uint32_t coo_idx = segment_start_coo_idx + i;
+                rd.NZE_val[i] = sorted_coo.values[coo_idx];
+                
+                // 원본 col_idx 대신, 세그먼트 내의 상대적 순서(0 ~ 8)를 저장
+                rd.NZE_col_idx[i] = (uint8_t)i;
+                // rd.NZE_col_idx[i] = (uint8_t)sorted_coo.col_indices[coo_idx];
+            }
+            
+            current_block.row_desc[current_block.n_row] = rd;
+            current_block.n_row++;
+
+            // 5-b. Column Chunk 채우기 (필요한 경우)
+            if (chunks_needed > 0) {
+                column_chunk cc = {}; // 0으로 초기화
+                // cc에 저장할 NZE 수 (최대 7개)
+                uint32_t nze_in_cc = nze_for_this_segment - nze_in_rd;
+                for (uint32_t i = 0; i < nze_in_cc; ++i) {
+                    // rd에 저장된 NZE (9개) 이후의 인덱스부터 시작
+                    cc.NZE_val[i] = sorted_coo.values[segment_start_coo_idx + nze_in_rd + i];
+
+                    // 원본 col_idx 대신, 세그먼트 내의 상대적 순서(9 ~ 15)를 저장
+                    cc.NZE_col_idx[i] = (uint8_t)(nze_in_rd + i);
+                }
+                
+                current_block.col_chunk[current_block.n_chunk] = cc;
+                current_block.n_chunk++;
+            }
+            
+            nze_processed_in_row += nze_for_this_segment;
+        }
+        // 다음 행 그룹으로 이동 (nze_idx는 이미 다음 행 시작점에 있음)
     }
 
-    for (size_t i = 0; i < result1.size(); ++i) {
-        if (result1[i].size() != result2[i].size()) {
-            std::cout << "Difference in inner vector size at group " << i << ": " 
-                      << result1[i].size() << " != " << result2[i].size() << std::endl;
-            return false;
-        }
+    // 마지막으로 처리 중이던 블록 추가
+    if (current_block.n_row > 0) {
+        result_vector.push_back(current_block);
+    }
 
-        for (size_t j = 0; j < result1[i].size(); ++j) {
-            if (!compareReAlignedDramFormat(result1[i][j], result2[i][j], i, j)) {
-                return false;
+    return result_vector;
+}
+////////////////////////SPARSE FORMAT TRANSFER/////////////////
+////////////////////////SPARSE FORMAT TRANSFER/////////////////
+////////////////////////SPARSE FORMAT TRANSFER/////////////////
+
+
+////////////////////////CODE FOR DEBUGGING/////////////////////
+////////////////////////CODE FOR DEBUGGING/////////////////////
+void print_sparse_format(const std::vector<sparse_row_format>& custom_vec) {
+    std::cout << "--- New Custom Sparse Format (Total Blocks: " 
+              << custom_vec.size() << ") ---\n";
+
+    for (size_t i = 0; i < custom_vec.size(); ++i) {
+        const auto& block = custom_vec[i];
+        std::cout << "\n=============================================\n";
+        std::cout << "BLOCK " << i << " (n_row=" << block.n_row 
+                  << ", n_chunk=" << block.n_chunk << ")\n";
+        std::cout << "=============================================\n";
+
+        uint32_t chunk_idx_tracker = 0;
+
+        for (uint32_t j = 0; j < block.n_row; ++j) {
+            const auto& rd = block.row_desc[j];
+            std::cout << "  RowDesc[" << j << "]: "
+                      << "row_idx=" << rd.row_idx
+                      << ", NZE_count=" << (int)rd.NZE_count << "\n";
+            
+            uint32_t nze_in_rd = std::min((uint32_t)rd.NZE_count, (uint32_t)CHUNK_SIZE);
+            std::cout << "    -> RD NZEs (" << nze_in_rd << "): ";
+            for(uint32_t k=0; k < nze_in_rd; ++k) {
+                // col_idx는 uint8_t이므로 (int)로 캐스팅해야 숫자로 출력됨
+                std::cout << "(C=" << (int)rd.NZE_col_idx[k] << ", V=" << rd.NZE_val[k] << ") ";
+            }
+            std::cout << "\n";
+
+            if (rd.NZE_count > CHUNK_SIZE) { // 10~16개 NZE -> chunk 1개 필요
+                if (chunk_idx_tracker >= block.n_chunk) {
+                    std::cout << "    [ERROR: Chunk index out of bounds!]\n";
+                    continue;
+                }
+                const auto& chunk = block.col_chunk[chunk_idx_tracker];
+                uint32_t nze_in_cc = rd.NZE_count - CHUNK_SIZE; // 1~7개
+                
+                std::cout << "    -> Chunk[" << chunk_idx_tracker << "] NZEs (" << nze_in_cc << "): ";
+                for(uint32_t k=0; k < nze_in_cc; ++k) {
+                    std::cout << "(C=" << (int)chunk.NZE_col_idx[k] << ", V=" << chunk.NZE_val[k] << ") ";
+                }
+                std::cout << "\n";
+                chunk_idx_tracker++;
             }
         }
     }
-
-    return true;
+    std::cout << "-------------------------------------------\n";
 }
+////////////////////////CODE FOR DEBUGGING/////////////////////
+////////////////////////CODE FOR DEBUGGING/////////////////////
+////////////////////////CODE FOR DEBUGGING/////////////////////
 
 // Main function
 int main() {
     // 처리할 데이터셋 목록
     const std::vector<std::string> dataset_names = {
-        "cora",
-        "citeseer",
-        "amazon-photo",
-        "amazon-com",
-        "Pubmed",
-        "corafull",
-        "coauthor-phy",
-        "coauthor-cs",
-        "cornell",
-        "chameleon",
-        "squirrel"
+        // "cora",
+        // "citeseer",
+        // "amazon-photo",
+        "amazon-com"
+        // "Pubmed",
+        // "corafull",
+        // "coauthor-phy",
+        // "coauthor-cs",
+        // "cornell",
+        // "chameleon",
+        // "squirrel"
     };
 
     const int num_tiles = 64;
@@ -515,10 +454,13 @@ int main() {
     for (const auto& dataset : dataset_names) {
         // 1. 파일 경로 설정
         const std::string base_path = "./suite/partitioned_default/" + dataset + "/partition_";
-        const std::string output_path = "spformat/tiled_spformat_" + dataset + ".dat";
+        const std::string output_path_b0 = "spformat_b0/tiled_sp_" + dataset + ".dat";
+        const std::string output_path_b2 = "spformat_b2/tiled_sp_" + dataset + ".dat";
 
-        // 2. DRAF 저장 벡터 초기화
-        std::vector<std::vector<re_aligned_dram_format>> draf_result(num_tiles);
+        // 2. 저장 벡터 초기화
+        std::vector<std::vector<sparse_row_format>> spmm_format_bank0(num_tiles);
+        std::vector<std::vector<sparse_row_format>> spmm_format_bank2(num_tiles);
+        
         uint32_t max_size = 0;
         uint32_t max_index = 0;
 
@@ -529,36 +471,35 @@ int main() {
             std::string file_path = base_path + std::to_string(tile) + ".mtx";
             
             COOMatrix tile_matrix = readMTXFile(file_path);
-            uint32_t NEW_NNZ = tile_matrix.nnz;
-
-            draf_result[tile] = spmm_format_transfer(
-                tile_matrix.row_indices,
-                tile_matrix.col_indices,
-                tile_matrix.values,
-                NEW_NNZ
+            std::vector<COOMatrix> col_tiles = splitMatrixColumnWise(tile_matrix, 2); // 2개의 뱅크로 분할
+            COOMatrix sorted_coo_b0 = sort_coo_by_row(
+                col_tiles[0].row_indices,
+                col_tiles[0].col_indices,
+                col_tiles[0].values,
+                col_tiles[0].nnz
             );
+            spmm_format_bank0[tile] = spmm_format_transfer(sorted_coo_b0);
 
-            // 최대 크기 추적
-            if (draf_result[tile].size() > max_size) {
-                max_size = draf_result[tile].size();
-                max_index = tile;
-            }
+            COOMatrix sorted_coo_b2 = sort_coo_by_row(
+                col_tiles[1].row_indices,
+                col_tiles[1].col_indices,
+                col_tiles[1].values,
+                col_tiles[1].nnz
+            );
+            spmm_format_bank2[tile] = spmm_format_transfer(sorted_coo_b2);
         }
 
         // 4. 결과 저장
-        saveResultToFile(draf_result, output_path);
-        std::cout << "Saved results for " << dataset << " to " << output_path << std::endl;
-
+        saveSPTResultToFile(spmm_format_bank0, output_path_b0);
+        saveSPTResultToFile(spmm_format_bank2, output_path_b2);
+        std::cout << "Saved results for " << dataset << " to " << output_path_b0 << " and " << output_path_b2 << std::endl;
+        
         // 5. 디버깅용 결과 비교
-        if(1){
-            auto loadedResult = loadResultFromFile(output_path, 64);
-            if (compareResults(draf_result, loadedResult)) {
-                std::cout << "The results are same!" << std::endl;
-            } else {
-                std::cout << "The results are different!" << std::endl;
-                exit(1);
-            }
-        }
+        // bool debug = true;
+        // if (debug) {
+        //     print_sparse_format(spmm_format_bank0[0]); // 첫 번째 타일의 0번 뱅크 결과만
+        //     debug = false;
+        // }
     }
     
     std::cout << "All datasets processed successfully." << std::endl;

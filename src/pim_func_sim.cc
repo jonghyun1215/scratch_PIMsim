@@ -298,7 +298,14 @@ void PimFuncSim::AddTransaction(Transaction *trans) {
             global_acc_[0]->StartAcc();
             // 추후 global_acc_[1]도 추가할 수 있음
             // global_acc_[1]->StartAcc();
-            }     
+        } else if (addr.row == 0x3ff7) { // JH added set DRF
+            if (DebugMode(hex_addr))
+                std::cout << "SetDrf\n";
+            for (int i=0; i< config_.banks/2; i++) {
+                int pim_index = GetPimIndex(addr) + i;
+                pim_unit_[pim_index]->SetDrf(hex_addr, DataPtr);
+            }
+        }     
          else {  // RD, WR
             // check if it is evenbank or oddbank
             int evenodd = addr.bank % 2;

@@ -20,6 +20,8 @@ PimUnit::PimUnit(Config &config, int id)
     GRF_B_ = (unit_t*) malloc(GRF_SIZE);
     SRF_A_ = (unit_t*) malloc(SRF_SIZE);
     SRF_M_ = (unit_t*) malloc(SRF_SIZE); //16B
+    DRF = (unit_t*) malloc(DRF_SIZE); // 512B, JH added for Dense Register File
+
     bank_data_ = (unit_t*) malloc(WORD_SIZE);
     dst = (unit_t*) malloc(WORD_SIZE);
 
@@ -167,8 +169,8 @@ void PimUnit::SetGrf(uint64_t hex_addr, uint8_t* DataPtr) {
 // Set DRF
 void PimUnit::SetDrf(uint64_t hex_addr, uint8_t* DataPtr) {
     if (DebugMode()) std::cout << "  PU: SetDrf\n";
-    Address addr = config_.AddressMapping(hex_addr);
-    memcpy(DRF, DataPtr, 512); //WORD_SIZE = 32Byte
+    // Address addr = config_.AddressMapping(hex_addr);
+    memcpy(DRF, DataPtr, DRF_SIZE); //512B
 }
 
 // Set pim_unit's CRF Register

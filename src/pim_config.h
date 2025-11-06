@@ -25,6 +25,7 @@ typedef uint16_t          unit_t; //uint16_t = INT16 //TW added
 
 #define GRF_SIZE          (8 * UNITS_PER_WORD * UNIT_SIZE) //8 * 16 * 2 = 256B
 #define SRF_SIZE          (8 * UNIT_SIZE) //8 * 2 = 16B
+#define DRF_SIZE           512 // 16x16x2B
 
 enum class PIM_OPERATION {
     NOP = 0,
@@ -52,6 +53,7 @@ enum class PIM_OPERAND {
     GRF_B,
     SRF_A,
     SRF_M,
+    DRF, // JH added, 
     NONE
 };
 
