@@ -24,7 +24,7 @@ class PimInstruction{
     bool is_aam;
 
     PIM_OPERAND dst;
-    PIM_OPERAND src0; //Bank=0, GRF_A=1, GRF_B=2, SRF_A=3, SRF_M=4, NONE=5
+    PIM_OPERAND src0; //Bank=0, GRF_A=1, GRF_B=2, SRF_A=3, SRF_M=4, DRF=5
     PIM_OPERAND src1;
 
     int dst_idx;
@@ -80,7 +80,7 @@ class PimUnit {
     unit_t *SRF_M_; //2B * 8 = 16B
 
     // JH added
-    unit_t *DRF; // 512B
+    unit_t *DRF_; // 512B
 
     unit_t *dst;
     unit_t *src0;

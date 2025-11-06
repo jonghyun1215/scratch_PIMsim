@@ -37,7 +37,9 @@ enum class PIM_OPERATION {
     MUL,
     MAC,
     MAD,
-    SACC //TW added #12 //SACC는 MOV와 동일 But CLK 문제로 인해 우선 따로 추가
+    SACC, //TW added #12 //SACC는 MOV와 동일 But CLK 문제로 인해 우선 따로 추가
+    LOOP, // JH added
+    MUL_DRF // JH added
 };
 
 enum class PIM_OP_TYPE {

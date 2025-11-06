@@ -20,7 +20,7 @@ PimUnit::PimUnit(Config &config, int id)
     GRF_B_ = (unit_t*) malloc(GRF_SIZE);
     SRF_A_ = (unit_t*) malloc(SRF_SIZE);
     SRF_M_ = (unit_t*) malloc(SRF_SIZE); //16B
-    DRF = (unit_t*) malloc(DRF_SIZE); // 512B, JH added for Dense Register File
+    DRF_ = (unit_t*) malloc(DRF_SIZE); // 512B, JH added for Dense Register File
 
     bank_data_ = (unit_t*) malloc(WORD_SIZE);
     dst = (unit_t*) malloc(WORD_SIZE);
@@ -38,6 +38,10 @@ PimUnit::PimUnit(Config &config, int id)
     for (int i=0; i< SRF_SIZE / (int)sizeof(unit_t); i++) {
         SRF_A_[i] = 0;
         SRF_M_[i] = 0; //8개의 데이터가 들어감
+    }
+    // JH added
+    for (int i=0; i< DRF_SIZE / (int)sizeof(unit_t); i++) {
+        DRF_[i] = 0; 
     }
     
     //TW added to support SACC
@@ -84,11 +88,18 @@ void PimUnit::PrintPIM_IST(PimInstruction inst) { //PIM Config.h 파일의 PIM_O
     else if (inst.PIM_OP == (PIM_OPERATION)10) std::cout << "MAC\t";
     else if (inst.PIM_OP == (PIM_OPERATION)11) std::cout << "MAD\t";
     else if (inst.PIM_OP == (PIM_OPERATION)12) std::cout << "SACC\t"; //TW added
+    else if (inst.PIM_OP == (PIM_OPERATION)13) std::cout << "LOOP\t"; //JH added
     else std::cout << "UNKNOWN\t";
 
     if (inst.pim_op_type == (PIM_OP_TYPE)0) {  // CONTROL
-        std::cout << (int)inst.imm0 << "\t";
-        std::cout << (int)inst.imm1 << "\t";
+        if (inst.PIM_OP == PIM_OPERATION::LOOP) { // JH added
+            // LOOP의 경우 점프 타겟과 GRF 인덱스를 출력
+            std::cout << "Target: " << (int)inst.imm0 << "\t";
+            std::cout << "GRF_A[" << inst.src0_idx << "]\t";
+        } else {
+            std::cout << (int)inst.imm0 << "\t";
+            std::cout << (int)inst.imm1 << "\t";
+        }
     } else if (inst.pim_op_type == (PIM_OP_TYPE)1) {  // DATA
         PrintOperand((int)inst.dst);
         if ((int)inst.dst != 0) {
@@ -170,7 +181,7 @@ void PimUnit::SetGrf(uint64_t hex_addr, uint8_t* DataPtr) {
 void PimUnit::SetDrf(uint64_t hex_addr, uint8_t* DataPtr) {
     if (DebugMode()) std::cout << "  PU: SetDrf\n";
     // Address addr = config_.AddressMapping(hex_addr);
-    memcpy(DRF, DataPtr, DRF_SIZE); //512B
+    memcpy(DRF_, DataPtr, DRF_SIZE); //512B
 }
 
 // Set pim_unit's CRF Register
@@ -242,6 +253,24 @@ void PimUnit::PushCrf(int CRF_idx, uint8_t* DataPtr) {
             CRF[CRF_idx].src0 = BitToSrc0(DataPtr);
             CRF[CRF_idx].src0_idx = BitToSrc0Idx(DataPtr);
             //std::cout << "CRF[CRF_idx].src0_idx : " << CRF[CRF_idx].src0_idx << std::endl;
+            break;
+        case PIM_OPERATION::LOOP:
+            // JUMP와 유사하게 imm0를 사용하여 상대 주소를 절대 주소 타겟으로 변환하여 저장
+            CRF[CRF_idx].imm0 = CRF_idx + BitToImm0(DataPtr);
+            // 반복 횟수가 저장된 GRF_A의 인덱스를 src0_idx에 저장
+            CRF[CRF_idx].src0_idx = BitToSrc0Idx(DataPtr);
+            CRF[CRF_idx].pim_op_type = PIM_OP_TYPE::CONTROL;
+            break;
+        case PIM_OPERATION::MUL_DRF: // JH added MUL_DRF 
+            CRF[CRF_idx].pim_op_type = PIM_OP_TYPE::ALU;
+            CRF[CRF_idx].dst = BitToDst(DataPtr);       // 목적지 레지스터 (예: GRF_A)
+            CRF[CRF_idx].src0 = PIM_OPERAND::DRF;       // 첫 번째 소스는 DRF
+            CRF[CRF_idx].src1 = PIM_OPERAND::SRF_M;     // 두 번째 소스는 SRF_M (Scalar)
+            
+            // GRF_A의 몇 번째 레지스터에서 인덱스를 읽을지 src0_idx에 저장
+            CRF[CRF_idx].src0_idx = BitToSrc0Idx(DataPtr); 
+            // SRF_M의 몇 번째 스칼라를 사용할지 src1_idx에 저장 (필요 시)
+            CRF[CRF_idx].src1_idx = BitToSrc1Idx(DataPtr); 
             break;
         default:
             break;
@@ -321,6 +350,30 @@ int PimUnit::AddTransaction(uint64_t hex_addr, bool is_write,
         }
         if (DebugMode()) {
             std::cout << "  PU: JUMP left (" << LC << ")\n";
+        }
+    } else if (CRF[PPC].PIM_OP == PIM_OPERATION::LOOP) {
+        if (LC == 0) {
+            // GRF_A_[2]의 상위 8비트(1Byte)만 읽어서 LC에 저장
+            LC = (GRF_A_[CRF[PPC].src0_idx] >> 8) & 0xFF;
+            
+            // 만약 읽어온 반복 횟수가 0보다 크면 루프 타겟으로 점프
+            if (LC > 0) {
+                PPC = CRF[PPC].imm0;
+            } else {
+                // 반복 횟수가 0이면 루프를 수행하지 않고 다음 명령어로 진행
+                PPC += 1;
+            }
+        } else if (LC > 1) {
+            // 루프 진행 중: 타겟으로 점프하고 LC 감소
+            PPC = CRF[PPC].imm0;
+            LC -= 1;
+        } else if (LC == 1) {
+            // 루프 마지막: 점프하지 않고 다음 명령어로 진행 (Fall-through), LC 리셋
+            PPC += 1;
+            LC = 0;
+        }
+        if (DebugMode()) {
+            std::cout << "  PU: LOOP left (" << LC << ")\n";
         }
     }
 
@@ -444,6 +497,24 @@ void PimUnit::SetOperandAddr(uint64_t hex_addr) {
             } else {
                 src0 = SRF_M_ + src0_idx;
             }
+        } else if (CRF[PPC].src0 == PIM_OPERAND::DRF) { // JH added DRF 간접 주소 지정
+        // 1. 인덱스를 담고 있는 GRF_A 레지스터 번호를 가져옴
+        int grf_idx = CRF[PPC].src0_idx;
+        
+        // 2. 해당 GRF_A 레지스터의 첫 번째 1Byte 값을 읽어 DRF Row Index로 사용
+        // GRF_A_는 unit_t(2Byte) 배열이므로, 인덱싱 후 하위 1Byte만 마스킹(& 0xFF)하여 추출
+        uint8_t drf_row_idx = GRF_A_[grf_idx] & 0xFF;
+        
+        // 3. DRF Row 범위(0~15) 내로 제한 (안전장치)
+        drf_row_idx = drf_row_idx % 16; 
+        
+        // 4. 계산된 Row Index를 기반으로 src0 포인터 설정 (DRF는 512B, 한 Row는 32B = 16 unit_t)
+        src0 = DRF_ + drf_row_idx * WORD_SIZE;
+        
+            if (DebugMode()) {
+                std::cout << "  PU: MUL_DRF loaded index " << (int)drf_row_idx 
+                        << " from GRF_A[" << grf_idx << "]\n";
+            }
         }
 
         // set src1 address (AAM)
@@ -561,6 +632,9 @@ void PimUnit::Execute() {
         // TW added
         case PIM_OPERATION::SACC: //여기 진입 잘 하는 것 확인
             _SACC();
+            break;
+        case PIM_OPERATION::MUL_DRF: // JH added MUL과 동일하게 _MUL() 호출
+            _MUL();
             break;
         default:
             break;
