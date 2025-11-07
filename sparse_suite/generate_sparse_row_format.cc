@@ -343,6 +343,7 @@ std::vector<sparse_row_format> spmm_format_transfer(COOMatrix& sorted_coo)
             }
             
             current_block.row_desc[current_block.n_row] = rd;
+            current_block.row_count[current_block.n_row] = nze_for_this_segment;
             current_block.n_row++;
 
             // 5-b. Column Chunk 채우기 (필요한 경우)
@@ -437,17 +438,17 @@ void print_sparse_format(const std::vector<sparse_row_format>& custom_vec) {
 int main() {
     // 처리할 데이터셋 목록
     const std::vector<std::string> dataset_names = {
-        // "cora",
-        // "citeseer",
-        // "amazon-photo",
-        "amazon-com"
-        // "Pubmed",
-        // "corafull",
-        // "coauthor-phy",
-        // "coauthor-cs",
-        // "cornell",
-        // "chameleon",
-        // "squirrel"
+        "cora",
+        "citeseer",
+        "amazon-photo",
+        "amazon-com",
+        "Pubmed",
+        "corafull",
+        "coauthor-phy",
+        "coauthor-cs",
+        "cornell",
+        "chameleon",
+        "squirrel"
     };
 
     const int num_tiles = 64;
