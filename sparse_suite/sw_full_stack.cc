@@ -127,3 +127,37 @@ std::vector<std::vector<re_aligned_dram_format>> loadResultFromFile(const std::s
 
     return result;
 }
+std::vector<std::vector<sparse_row_format>> loadSparseFromFile(const std::string& filename, int num_BG) {
+    std::ifstream inFile(filename, std::ios::binary);
+
+    if (!inFile.is_open()) {
+        std::cerr << "Failed to open file for loading: " << filename << std::endl;
+        return {};
+    }
+
+    std::vector<std::vector<sparse_row_format>> result;
+
+    // Load the number of outer vectors
+    uint32_t outerSize;
+    inFile.read(reinterpret_cast<char*>(&outerSize), sizeof(uint32_t));
+
+    result.resize(outerSize);
+
+    for (uint32_t i = 0; i < outerSize; ++i) {
+        // Load the size of each inner vector
+        uint32_t innerSize;
+        inFile.read(reinterpret_cast<char*>(&innerSize), sizeof(uint32_t));
+
+        result[i].resize(innerSize);
+
+        // Load each sparse_row_format
+        for (uint32_t j = 0; j < innerSize; ++j) {
+            inFile.read(reinterpret_cast<char*>(&result[i][j]), sizeof(sparse_row_format));
+        }
+    }
+
+    inFile.close();
+    std::cout << "Data successfully loaded from " << filename << std::endl;
+
+    return result;
+}

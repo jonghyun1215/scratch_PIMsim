@@ -38,12 +38,18 @@ typedef struct column_chunk{
 }column_chunk;
 
 #define MAX_BLOCK_PER_ROW 32
-typedef struct sparse_row_format{
+typedef struct sparse_row_format{ 
+    // loop 수랑 다 따로 상세히 저장해야함
     uint32_t n_row;
     uint32_t n_chunk;
     row_descriptor row_desc[MAX_BLOCK_PER_ROW];
     column_chunk col_chunk[MAX_BLOCK_PER_ROW];
 }sparse_row_format;
+
+typedef struct exact_row_size{
+    std::vector<row_descriptor> row_desc;
+    std::vector<column_chunk> col_chunk;
+}exact_row_size;
 
 // Structure to hold the COO matrix data
 struct COOMatrix {

@@ -41,7 +41,7 @@ PimUnit::PimUnit(Config &config, int id)
     }
     // JH added
     for (int i=0; i< DRF_SIZE / (int)sizeof(unit_t); i++) {
-        DRF_[i] = 0; 
+        DRF_[i] = 1; // prefill DRF 
     }
     
     //TW added to support SACC

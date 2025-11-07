@@ -1,10 +1,11 @@
+MOV(AAM0) GRF_A BANK
 MOV(AAM0) SRF_M GRF_A           
 MUL_DRF(AAM0) GRF_B DRF SRF_M   
 ADD(AAM0) GRF_B GRF_B GRF_B
-LOOP -2 GRF_A[2]                
+LOOP -3 GRF_A[2]                
 SACC(AAM0) GRF_B GRF_B          
 SACC(AAM0) GRF_B GRF_B          
-JUMP -5 7                       
+JUMP -6 7                       
 MOV(AAM0) BANK GRF_B            
 JUMP -1 7                       
 EXIT

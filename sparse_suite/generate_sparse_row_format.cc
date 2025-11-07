@@ -360,6 +360,8 @@ std::vector<sparse_row_format> spmm_format_transfer(COOMatrix& sorted_coo)
                 
                 current_block.col_chunk[current_block.n_chunk] = cc;
                 current_block.n_chunk++;
+                // JH debug
+                // std::cout << "row per NZE over 9\n";
             }
             
             nze_processed_in_row += nze_for_this_segment;

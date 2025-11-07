@@ -93,17 +93,78 @@ void TransactionGenerator::Barrier() {
 }
 
 void SpmmTransactionGenerator::Initialize() {
+    std::cout<<"Initialize SpmmTransactionGenerator" << std::endl;
+    addr_B0_ = 0; // base address
+    addr_B2_ = 0;
+    addr_output_matrix_ = 0;
+    max_b0 = true;
 
-    ukernel[0]=0b01001000010000001000000000000000;  // MOV(AAM0) SRF_M GRF_A           
-    ukernel[1]=0b10010101011000001000000000000000;  // MUL_DRF(AAM0) GRF_B DRF SRF_M   
-    ukernel[2]=0b10000100100100001000000000000000;  // ADD(AAM0) GRF_B GRF_B GRF_B
-    ukernel[3]=0b11010000010001000101000010100000;  // LOOP -2 GRF_A[2]                
-    ukernel[4]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
-    ukernel[5]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
-    ukernel[6]=0b00010000000001000110100000001111;  // JUMP -5 7                       
-    ukernel[7]=0b01000000100000001000000000000000;  // MOV(AAM0) BANK GRF_B            
-    ukernel[8]=0b00010000000001000100100000001111;  // JUMP -1 7                       
-    ukernel[9]=0b00100000000000000000000000000000;  // EXIT
+    // ukernel을 몇번 실행시킬지 결정하기 위해 추가한 코드
+    // 가장 row를 많이 차지하는 DRAF_BG를 찾아서 그것을 기준으로 ukernel_count_per_pim_를 결정
+    uint32_t max_exec_time = 0;
+    uint32_t min_exec_time = B0_data_[0].size() * 2;
+
+    // Iterate over bank data to find the maximum size
+    for (size_t i = 0; i < B0_data_.size(); ++i) {
+        uint32_t add_kernel_executime = 0;
+        for (size_t j = 0; j < B0_data_[i].size(); ++j) {
+            // 각 요소의 n_chunk 값이 1보다 크면 추가 실행 시간 증가
+            if (B0_data_[i][j].n_chunk > 1) {
+                add_kernel_executime++;
+            }
+        }
+        // 현재 블록의 총 실행 시간 = 기본 크기 + 추가 실행 시간
+        uint32_t current_total_time = B0_data_[i].size() + add_kernel_executime;
+        
+        // 최대값, 최소값 갱신
+        if (current_total_time > max_exec_time) {
+            max_exec_time = current_total_time;
+        }        
+        if (current_total_time < min_exec_time) {
+            min_exec_time = current_total_time;
+        }
+        
+    }
+    for (size_t i = 0; i < B2_data_.size(); ++i) {
+        uint32_t add_kernel_executime = 0;
+        for (size_t j = 0; j < B2_data_[i].size(); ++j) {
+            if (B2_data_[i][j].n_chunk > 1) {
+                add_kernel_executime++;
+            }
+        }
+        uint32_t current_total_time = B2_data_[i].size() + add_kernel_executime;
+
+        if (current_total_time > max_exec_time) {
+            max_exec_time = current_total_time;
+            max_b0 = false;
+        }
+        if (current_total_time < min_exec_time) {
+            min_exec_time = current_total_time;
+        }
+    }
+
+    // 최종 결정된 최대 실행 시간을 kernel_execution_time_에 할당
+    kernel_execution_time_ = max_exec_time;
+    min_kernel_execution_time_ = min_exec_time;
+
+    std::cout << "Max ukernel iteration: " << kernel_execution_time_ << std::endl;
+    std::cout << "Min ukernel iteration: " << min_kernel_execution_time_ << std::endl;
+
+    // SpMM Ukernel 정의 (총 10개 명령어)
+    ukernel_spmm_ = (uint32_t *) malloc(sizeof(uint32_t) * 32); // 32개 명령어 분량 할당 (넉넉하게)
+    
+    ukernel_spmm_[0]=0b01000010000000001000000000000000;  // MOV(AAM0) GRF_A BANK
+    ukernel_spmm_[1]=0b01001000010000001000000000000000;  // MOV(AAM0) SRF_M GRF_A           
+    ukernel_spmm_[2]=0b10010101011000001000000000000000;  // MUL_DRF(AAM0) GRF_B DRF SRF_M   
+    ukernel_spmm_[3]=0b10000100100100001000000000000000;  // ADD(AAM0) GRF_B GRF_B GRF_B
+    ukernel_spmm_[4]=0b11010000010001000101100010100000;  // LOOP -3 GRF_A[2]                
+    ukernel_spmm_[5]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
+    ukernel_spmm_[6]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
+    ukernel_spmm_[7]=0b00010000000001000111000000001111;  // JUMP -6 7                       
+    ukernel_spmm_[8]=0b01000000100000001000000000000000;  // MOV(AAM0) BANK GRF_B            
+    ukernel_spmm_[9]=0b00010000000001000100100000001111;  // JUMP -1 7                       
+    ukernel_spmm_[10]=0b00100000000000000000000000000000;  // EXIT
+
 }
 void SpmmTransactionGenerator::SetData() {
     // strided size of one operand with one computation part(minimum)
@@ -113,51 +174,84 @@ void SpmmTransactionGenerator::SetData() {
     #ifdef debug_mode
     std::cout << "HOST:\tSet input data...\n";
     #endif
-    if (B0_data_.size() != B2_data_.size()) {
-        std::cout << "SpMM partitioning error \n";
-        return;
-    }
-    // --- B0_data_를 Bank 0에 할당 ---
-    // 16(ch) * 4(bg) = 64개의 (채널, 뱅크그룹) 조합을 순회
-    for (size_t i = 0; i < B0_data_.size(); ++i) {
-        uint32_t bg = i % 4;          // BankGroup (0, 1, 2, 3)
-        uint32_t current_ch = i / 4;  // Channel (0 ~ 15)
+    
+    // 어차피 GPU 메모리에 이미 올라와 있는 데이터들
+    // // --- B0_data_를 Bank 0에 할당 ---
+    // // 16(ch) * 4(bg) = 64개의 (채널, 뱅크그룹) 조합을 순회
+    // for (size_t i = 0; i < B0_data_.size(); ++i) {
+    //     uint32_t bg = i % 4;          // BankGroup (0, 1, 2, 3)
+    //     uint32_t current_ch = i / 4;  // Channel (0 ~ 15)
         
-        // 현재 (ch, bg)에 할당된 모든 블록(j)을 순회
-        for (size_t j = 0; j < B0_data_[i].size(); ++j) {
-            // 1. Bank(ba)를 0으로 고정합니다.
-            uint32_t ba = 0;
-            //    (각 블록이 bank 0의 새 row에 매핑됨)
-            uint32_t ro = (uint32_t)j; 
-            uint32_t co = 0;          // Column (기존 로직 유지)
+    //     // 현재 (ch, bg)에 할당된 모든 블록(j)을 순회
+    //     for (size_t j = 0; j < B0_data_[i].size(); ++j) {
+    //         // 1. Bank(ba)를 0으로 고정합니다.
+    //         uint32_t ba = 0;
+    //         //    (각 블록이 bank 0의 새 row에 매핑됨)
+    //         uint32_t ro = (uint32_t)j; 
+    //         uint32_t co = 0;          // Column (기존 로직 유지)
 
-            const sparse_row_format& element = B0_data_[i][j];
-            const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&element);
+    //         const sparse_row_format& element = B0_data_[i][j];
+    //         exact_row_size row_data = {};
+    //         for (int rd = 0; rd < element.n_row; rd++) {
+    //             row_data.row_desc.push_back(element.row_desc[rd]);
+    //         }
+    //         for (int cc = 0; cc < element.n_chunk; cc++) {
+    //             row_data.col_chunk.push_back(element.col_chunk[cc]);
+    //         }
+    //         const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&row_data);
             
-            for (co = 0; co < 32; co++) { // 1KB 전부 다 씀
-                // Address 생성 시 ba는 항상 0입니다.
-                Address addr(current_ch, 0, bg, ba, ro, co); // (rank=0)
-                uint64_t hex_addr = ReverseAddressMapping(addr); 
-                TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
-            }
-        }
+    //         for (co = 0; co < 32; co++) { // 1KB 전부 다 씀
+    //             // Address 생성 시 ba는 항상 0입니다.
+    //             Address addr(current_ch, 0, bg, ba, ro, co); // (rank=0)
+    //             uint64_t hex_addr = ReverseAddressMapping(addr); 
+    //             TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
+    //         }
+    //     }
+    // }
+    // for (size_t i = 0; i < B2_data_.size(); ++i) {
+    //     uint32_t bg = i % 4;          // BankGroup (0, 1, 2, 3)
+    //     uint32_t current_ch = i / 4;  // Channel (0 ~ 15)
         
-        for (size_t j = 0; j < B2_data_[i].size(); ++j) {
-            // 1. Bank(ba)를 2로 고정합니다.
-            uint32_t ba = 2;
-            uint32_t ro = (uint32_t)j; 
-            uint32_t co = 0;
+    //     for (size_t j = 0; j < B2_data_[i].size(); ++j) {
+    //         // 1. Bank(ba)를 2로 고정합니다.
+    //         uint32_t ba = 2;
+    //         uint32_t ro = (uint32_t)j; 
+    //         uint32_t co = 0;
 
-            const sparse_row_format& element = B2_data_[i][j];
-            const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&element);
-            
-            for (co = 0; co < 32; co++) { // 1KB 전부 다 씀
-                Address addr(current_ch, 0, bg, ba, ro, co); // (rank=0으로 가정)
-                uint64_t hex_addr = ReverseAddressMapping(addr);
-                TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
-            }
+    //         const sparse_row_format& element = B2_data_[i][j];
+    //         exact_row_size row_data = {};
+    //         for (int rd = 0; rd < element.n_row; rd++) {
+    //             row_data.row_desc.push_back(element.row_desc[rd]);
+    //         }
+    //         for (int cc = 0; cc < element.n_chunk; cc++) {
+    //             row_data.col_chunk.push_back(element.col_chunk[cc]);
+    //         }
+    //         const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&row_data);
+
+    //         for (co = 0; co < 32; co++) { // 1KB 전부 다 씀
+    //             Address addr(current_ch, 0, bg, ba, ro, co); // (rank=0으로 가정)
+    //             uint64_t hex_addr = ReverseAddressMapping(addr);
+    //             TryAddTransaction(hex_addr, true, const_cast<uint8_t*>(data_ptr + co*SIZE_WORD));
+    //         }
+    //     }
+    // }
+    // Barrier();
+
+    #ifdef debug_mode
+    std::cout << "\nHOST:\tLoad Dense Matrix to DRF (512B)\n";
+    #endif
+    // DRF는 512B = 32B * 16 Rows. MAP_DRF(0x3ff7)의 col 0~15에 쓰기.
+    for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+        // for (int bg = 0; bg < 4; bg++) {
+        for (int co = 0; co < 16; co++) {
+            Address addr(ch, 0, 0, EVEN_BANK, MAP_DRF, co);
+            uint64_t hex_addr = ReverseAddressMapping(addr);
+            // data_temp_에는 적절한 Dense Matrix 데이터가 들어있다고 가정
+            TryAddTransaction(hex_addr, true, data_temp_);
         }
+        // }
     }
+    Barrier();
 
     //exit(1);
     std::cout << "SetData Done" << std::endl;
@@ -174,25 +268,124 @@ void SpmmTransactionGenerator::SetData() {
     }
     Barrier();
 
-    // Program μkernel into CRF register
     #ifdef debug_mode
-    std::cout << "\nHOST:\tProgram SpMV μkernel \n";
+    std::cout << "\nHOST:\tProgram SpMM μkernel \n";
     #endif
     for (int ch = 0; ch < NUM_CHANNEL; ch++) {
-        for (int co = 0; co < 3; co++) { //for (int co = 0; co < 1; co++) {
+        // Ukernel이 총 10개 명령어로, 32Byte(명령어 8개) 단위로 전송 시 2번의 트랜잭션이 필요
+        // co=0: 명령어 0~7 전송
+        // co=1: 명령어 8~15 전송 (여기서는 8~9번 명령어와 나머지 NOP가 전송됨)
+        for (int co = 0; co < 2; co++) {
             Address addr(ch, 0, 0, 0, MAP_CRF, co);
             uint64_t hex_addr = ReverseAddressMapping(addr);
-            // TryAddTransaction(hex_addr, true, (uint8_t*)&ukernel_spmv_[co*8]);
+            // ukernel_spmm_ 배열에서 8개씩(32Byte) 끊어서 전송
+            TryAddTransaction(hex_addr, true, (uint8_t*)&ukernel_spmm_[co * 8]);
         }
     }
     Barrier();
 }
 void SpmmTransactionGenerator::Execute() {
+    #ifdef debug_mode
+    std::cout << "HOST:\tkernel_execution_time: " << kernel_execution_time_ << std::endl;
+    #endif
+    // Mode transition: AB -> AB-PIM
+    #ifdef debug_mode
+    std::cout << "HOST:\t[2] AB -> PIM \n";
+    #endif
+    *data_temp_ |= 1;
+    
+    for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+        //ch, rank, bankgroup, bank, row, column
+        Address addr(ch, 0, 0, 0, MAP_PIM_OP_MODE, 0); // MAP_PIM_OP_MODE = 0x3ffd
+        uint64_t hex_addr = ReverseAddressMapping(addr);
+        TryAddTransaction(hex_addr, true, data_temp_);
+    }
+    Barrier();
+    #ifdef debug_mode
+    std::cout << "\nHOST:\tExecute μkernel\n";
+    #endif
 
+    for (int ro = 0; ro < kernel_execution_time_; ro++) {
+        #ifdef debug_mode
+        std::cout << "\nHOST:\tExecute bank0\n";
+        #endif
+
+        for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+            // MOV(AAM0) GRF_A EVEN_BANK
+            int co = 0;
+            Address addr(ch, 0, 0, EVEN_BANK, ro, co); 
+            uint64_t hex_addr = ReverseAddressMapping(addr);
+            TryAddTransaction(addr_B0_ + hex_addr, false, data_temp_);
+            // Execute ukernel 0 MOV(AAM0) SRF_M GRF_A
+            // AAM(0) 및 col=0으로 트리거
+            Address addr_0(ch, 0, 0, EVEN_BANK, ro, co); 
+            uint64_t hex_addr_0 = ReverseAddressMapping(addr_0);
+            TryAddTransaction(addr_B0_ + hex_addr_0, false, data_temp_);
+            // loop 계산을 위해 현재 row의 chunk 수를 확인
+            // int loop = B0_data_;
+            for (int j = 0; j < 7; j++) { // JUMP -5 7에 의해 8번 반복 (j = 0 to 7)
+                for (int k = 0; k < 2; k++) { // loop
+                    // ukernel[1]: MUL_DRF(AAM0) GRF_B DRF SRF_M
+                    // GRF_A[24] -> DRF Index, SRF_M[0] * DRF[idx] -> GRF_B[j]
+                    // AAM(0), col=1, dst=GRF_B[j] (j는 JUMP 루프 카운터)
+                    Address addr_1(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j (AAM으로 GRF_B[j] 선택)
+                    uint64_t hex_addr_1 = ReverseAddressMapping(addr_1);
+                    TryAddTransaction(hex_addr_1, false, data_temp_);
+
+                    // ukernel[2]: ADD(AAM0) GRF_B GRF_B GRF_B
+                    Address addr_2(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
+                    uint64_t hex_addr_2 = ReverseAddressMapping(addr_2);
+                    TryAddTransaction(hex_addr_2, false, data_temp_);
+
+                    // ukernel[3]: LOOP -2 GRF_A[2] (PIM 유닛이 내부적으로 PPC를 1로 돌림)
+                    Address addr_3(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
+                    uint64_t hex_addr_3 = ReverseAddressMapping(addr_3);
+                    TryAddTransaction(hex_addr_3, false, data_temp_);
+                } // end loop
+                // ukernel[4]: SACC(AAM0) GRF_B GRF_B
+                Address addr_4(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
+                TryAddTransaction(ReverseAddressMapping(addr_4), false, data_temp_);
+                
+                // ukernel[5]: SACC(AAM0) GRF_B GRF_B
+                Address addr_5(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
+                TryAddTransaction(ReverseAddressMapping(addr_5), false, data_temp_);
+                
+                // ukernel[6]: JUMP -5 7 (PIM 유닛이 내부적으로 PPC를 1로 돌림)
+                Address addr_6(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
+                TryAddTransaction(ReverseAddressMapping(addr_6), false, data_temp_);
+            } // end jump
+            // ukernel[8] (JUMP -1 7)에 의해 8번 반복 (w = 0 to 7)
+            // GRF_B[0] ~ GRF_B[7]을 Bank 0, Col 0~7에 씀
+            for (int w = 0; w < 8; w++) {
+                // ukernel[7]: MOV(AAM0) BANK GRF_B
+                // AAM(0), col=w, src0=GRF_B[w]
+                Address addr_7(ch, 0, 0, ODD_BANK, ro, w); // col=w (0~7)
+                TryAddTransaction(ReverseAddressMapping(addr_7), true, data_temp_); // Write=true
+
+                // ukernel[8]: JUMP -1 7
+                Address addr_8(ch, 0, 0, ODD_BANK, ro, w); // col=w (0~7)
+                TryAddTransaction(ReverseAddressMapping(addr_8), true, data_temp_); // Write=true
+            }
+
+            // ukernel[9]: EXIT
+            Address addr_9(ch, 0, 0, EVEN_BANK, ro, 8); // 다음 col (8)
+            TryAddTransaction(ReverseAddressMapping(addr_9), false, data_temp_);
+
+        }
+        
+    }
+
+    Barrier();
 }
 void SpmmTransactionGenerator::GetResult() {
+    // no need to change mode for write to bank
 
+    // To print accumulation count
+    // memory_system_.PrintAccumulateCount();
 }
+void SpmmTransactionGenerator::AdditionalAccumulation(){}
+
+void SpmmTransactionGenerator::ChangeVector() {}
 
 ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////
