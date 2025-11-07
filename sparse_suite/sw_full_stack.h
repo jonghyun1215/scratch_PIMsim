@@ -40,7 +40,7 @@ typedef struct column_chunk{
 #define MAX_BLOCK_PER_ROW 32
 typedef struct sparse_row_format{ 
     // loop 수랑 다 따로 상세히 저장해야함
-    uint32_t n_row;
+    uint32_t n_rd;
     uint32_t n_chunk;
     uint8_t row_count[MAX_BLOCK_PER_ROW]; //1kb format별 nnz_count 저장
     row_descriptor row_desc[MAX_BLOCK_PER_ROW];

@@ -23,6 +23,10 @@ sparse_suite/matplotlib-cpp/
 *.pdf
 hardware/
 !/hardware/src/
+scripts/summary/
+scripts/dramsim3.json
+scripts/dramsim3.txt
+scriptssummary.txt
 
 # Compiled Object files
 *.slo

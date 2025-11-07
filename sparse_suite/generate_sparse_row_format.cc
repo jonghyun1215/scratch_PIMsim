@@ -316,7 +316,7 @@ std::vector<sparse_row_format> spmm_format_transfer(COOMatrix& sorted_coo)
             uint32_t chunks_needed = (nze_for_this_segment > CHUNK_SIZE) ? 1 : 0;
 
             // 4. Block Splitting: 현재 블록에 이 세그먼트를 추가할 수 있는지 확인
-            if (current_block.n_row + current_block.n_chunk + row_desc_needed + chunks_needed > MAX_BLOCK_PER_ROW) 
+            if (current_block.n_rd + current_block.n_chunk + row_desc_needed + chunks_needed > MAX_BLOCK_PER_ROW) 
             {
                 // 용량 초과. 현재 블록을 결과에 추가하고 새 블록 시작
                 result_vector.push_back(current_block);
@@ -342,9 +342,9 @@ std::vector<sparse_row_format> spmm_format_transfer(COOMatrix& sorted_coo)
                 // rd.NZE_col_idx[i] = (uint8_t)sorted_coo.col_indices[coo_idx];
             }
             
-            current_block.row_desc[current_block.n_row] = rd;
-            current_block.row_count[current_block.n_row] = nze_for_this_segment;
-            current_block.n_row++;
+            current_block.row_desc[current_block.n_rd] = rd;
+            current_block.row_count[current_block.n_rd] = nze_for_this_segment;
+            current_block.n_rd++;
 
             // 5-b. Column Chunk 채우기 (필요한 경우)
             if (chunks_needed > 0) {
@@ -371,7 +371,7 @@ std::vector<sparse_row_format> spmm_format_transfer(COOMatrix& sorted_coo)
     }
 
     // 마지막으로 처리 중이던 블록 추가
-    if (current_block.n_row > 0) {
+    if (current_block.n_rd > 0) {
         result_vector.push_back(current_block);
     }
 
@@ -391,13 +391,13 @@ void print_sparse_format(const std::vector<sparse_row_format>& custom_vec) {
     for (size_t i = 0; i < custom_vec.size(); ++i) {
         const auto& block = custom_vec[i];
         std::cout << "\n=============================================\n";
-        std::cout << "BLOCK " << i << " (n_row=" << block.n_row 
+        std::cout << "BLOCK " << i << " (n_rd=" << block.n_rd
                   << ", n_chunk=" << block.n_chunk << ")\n";
         std::cout << "=============================================\n";
 
         uint32_t chunk_idx_tracker = 0;
 
-        for (uint32_t j = 0; j < block.n_row; ++j) {
+        for (uint32_t j = 0; j < block.n_rd; ++j) {
             const auto& rd = block.row_desc[j];
             std::cout << "  RowDesc[" << j << "]: "
                       << "row_idx=" << rd.row_idx

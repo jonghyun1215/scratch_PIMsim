@@ -1,8 +1,0 @@
-Matrix: test
-[032mSuccess Initialize (0 cycles)[0m
-[032mSuccess SetData (408 cycles)[0m
-[032mSuccess Execute (1566389 cycles)[0m
-[032mSuccess GetResult (0 cycles)[0m
-[032mSuccess Accumulation (0 cycles)[0m
-Total accumulation count: 
-------------------------------

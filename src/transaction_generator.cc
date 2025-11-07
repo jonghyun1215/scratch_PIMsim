@@ -152,20 +152,31 @@ void SpmmTransactionGenerator::Initialize() {
     std::cout << "Max ukernel iteration: " << kernel_execution_time_ << std::endl;
     std::cout << "Min ukernel iteration: " << min_kernel_execution_time_ << std::endl;
 
-    // SpMM Ukernel 정의 (총 10개 명령어)
+    // SpMM Ukernel 정의 (총 11개 명령어)
     ukernel_spmm_ = (uint32_t *) malloc(sizeof(uint32_t) * 32); // 32개 명령어 분량 할당 (넉넉하게)
     
     ukernel_spmm_[0]=0b01000010000000001000000000000000;  // MOV(AAM0) GRF_A BANK
     ukernel_spmm_[1]=0b01001000010000001000000000000000;  // MOV(AAM0) SRF_M GRF_A           
     ukernel_spmm_[2]=0b10010101011000001000000000000000;  // MUL_DRF(AAM0) GRF_B DRF SRF_M   
     ukernel_spmm_[3]=0b10000100100100001000000000000000;  // ADD(AAM0) GRF_B GRF_B GRF_B
-    ukernel_spmm_[4]=0b11010000010001000101100010100000;  // LOOP -3 GRF_A[2]                
+    ukernel_spmm_[4]=0b11010000010001000110000010100000;  // LOOP -4 GRF_A[2]                
     ukernel_spmm_[5]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
     ukernel_spmm_[6]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
-    ukernel_spmm_[7]=0b00010000000001000111000000001111;  // JUMP -6 7                       
+    ukernel_spmm_[7]=0b00010000000001000111100000011000;  // JUMP -7 16                       
     ukernel_spmm_[8]=0b01000000100000001000000000000000;  // MOV(AAM0) BANK GRF_B            
     ukernel_spmm_[9]=0b00010000000001000100100000001111;  // JUMP -1 7                       
     ukernel_spmm_[10]=0b00100000000000000000000000000000;  // EXIT
+
+    // no BGA
+    // ukernel_spmm_[0]=0b01000010000000001000000000000000;  // MOV(AAM0) GRF_A BANK
+    // ukernel_spmm_[1]=0b01001000010000001000000000000000;  // MOV(AAM0) SRF_M GRF_A           
+    // ukernel_spmm_[2]=0b10010101011000001000000000000000;  // MUL_DRF(AAM0) GRF_B DRF SRF_M   
+    // ukernel_spmm_[3]=0b10000100100100001000000000000000;  // ADD(AAM0) GRF_B GRF_B GRF_B
+    // ukernel_spmm_[4]=0b11010000010001000110000010100000;  // LOOP -4 GRF_A[2]                       
+    // ukernel_spmm_[5]=0b00010000000001000111100000001000;  // JUMP -7 8                     
+    // ukernel_spmm_[6]=0b01000000100000001000000000000000;  // MOV(AAM0) BANK GRF_B            
+    // ukernel_spmm_[7]=0b00010000000001000100100000001111;  // JUMP -1 7                       
+    // ukernel_spmm_[8]=0b00100000000000000000000000000000;  // EXIT
 
 }
 void SpmmTransactionGenerator::SetData() {
@@ -177,7 +188,8 @@ void SpmmTransactionGenerator::SetData() {
     std::cout << "HOST:\tSet input data...\n";
     #endif
     
-    // 어차피 GPU 메모리에 이미 올라와 있는 데이터들
+    // 어차피 GPU 메모리에 이미 올라와 있는 데이터들 굳이 계산 필요 없다.
+
     // // --- B0_data_를 Bank 0에 할당 ---
     // // 16(ch) * 4(bg) = 64개의 (채널, 뱅크그룹) 조합을 순회
     // for (size_t i = 0; i < B0_data_.size(); ++i) {
@@ -310,17 +322,23 @@ void SpmmTransactionGenerator::Execute() {
     for (int ch = 0; ch < NUM_CHANNEL; ch++) {
     // for (int ro = 0; ro < kernel_execution_time_; ro++) {
         int n_rows = (int) max_b0 ? B0_data_[ch * 4 + 0].size() : B2_data_[ch * 4 + 0].size(); // bankgroup 0 고정
+        int accum_rds = 0;
         for (int ro = 0; ro < n_rows; ro++) {
         // for (int ch = 0; ch < NUM_CHANNEL; ch++) {
             int rd_index = 0;
-            int n_rows_per_rd = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].n_row : B2_data_[ch * 4 + 0][ro].n_row;
+            int n_rows_per_rd = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].n_rd : B2_data_[ch * 4 + 0][ro].n_rd;
             // ukernel iteration per row buffer
             // int n_chunk_per_row_buffer = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].n_chunk : B2_data_[ch * 4 + 0][ro].n_chunk;
-            int ad_iter = n_rows_per_rd / 8;
+            accum_rds = (n_rows_per_rd > 16) ? accum_rds += (n_rows_per_rd - 16) : accum_rds; // 16개 초과하는 RD가 있으면 누적
+            int ad_iter = 1;
+            if (accum_rds > 16) {
+                ad_iter += 1;
+                accum_rds = accum_rds - 16;
+            }
             for (int ad = 0; ad < ad_iter; ad++ ) {
-                for (int j = 0; j < 7; j++) { // JUMP -5 7에 의해 8번 반복 (j = 0 to 7)
+                for (int j = 0; j < 16; j++) { // JUMP 16번 반복 (j = 0 to 15)
                     int loop = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].row_count[rd_index] : B2_data_[ch * 4 + 0][ro].row_count[rd_index];
-                    if (loop == 0) loop = 1;
+                    if (loop == 0 || ad > 0) loop = 1;
                     rd_index++;
                     // MOV(AAM0) GRF_A EVEN_BANK
                     int co = 0;
@@ -358,7 +376,7 @@ void SpmmTransactionGenerator::Execute() {
                     Address addr_5(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
                     TryAddTransaction(ReverseAddressMapping(addr_5), false, data_temp_);
                     
-                    // ukernel[6]: JUMP -5 7 (PIM 유닛이 내부적으로 PPC를 1로 돌림)
+                    // ukernel[6]: JUMP -6 7 (PIM 유닛이 내부적으로 PPC를 1로 돌림)
                     Address addr_6(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
                     TryAddTransaction(ReverseAddressMapping(addr_6), false, data_temp_);
                 } // end jump

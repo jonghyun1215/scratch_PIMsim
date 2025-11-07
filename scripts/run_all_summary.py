@@ -2,12 +2,13 @@ import os
 import re
 
 # 로그 파일이 있는 디렉토리와 요약 파일을 저장할 디렉토리를 설정합니다.
-log_dir = '/home/jonghyun/sparsePIM/scratch_PIMsim/build/log'
-summary_dir = '/home/jonghyun/sparsePIM/scratch_PIMsim/build/summary'
+log_dir = './log'
+summary_dir = './summary'
 
 # 요약 파일을 저장할 디렉토리가 없으면 생성합니다.
 os.makedirs(summary_dir, exist_ok=True)
 
+print(f"Checking directory: {log_dir}")
 # 로그 디렉토리의 모든 파일을 확인합니다.
 try:
     log_files = [f for f in os.listdir(log_dir) if f.endswith('.log')]
