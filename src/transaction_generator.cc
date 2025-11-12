@@ -159,13 +159,12 @@ void SpmmTransactionGenerator::Initialize() {
     ukernel_spmm_[1]=0b01001000010000001000000000000000;  // MOV(AAM0) SRF_M GRF_A           
     ukernel_spmm_[2]=0b10010101011000001000000000000000;  // MUL_DRF(AAM0) GRF_B DRF SRF_M   
     ukernel_spmm_[3]=0b10000100100100001000000000000000;  // ADD(AAM0) GRF_B GRF_B GRF_B
-    ukernel_spmm_[4]=0b11010000010001000110000010100000;  // LOOP -4 GRF_A[2]                
-    ukernel_spmm_[5]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
-    ukernel_spmm_[6]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B          
-    ukernel_spmm_[7]=0b00010000000001000111100000011000;  // JUMP -7 16                       
-    ukernel_spmm_[8]=0b01000000100000001000000000000000;  // MOV(AAM0) BANK GRF_B            
-    ukernel_spmm_[9]=0b00010000000001000100100000001111;  // JUMP -1 7                       
-    ukernel_spmm_[10]=0b00100000000000000000000000000000;  // EXIT
+    ukernel_spmm_[4]=0b11010000010001000101100010100000;  // LOOP -3 GRF_A[2]    
+    ukernel_spmm_[5]=0b11000100100000001000000000000000;  // SACC(AAM0) GRF_B GRF_B              
+    ukernel_spmm_[6]=0b00010000000001000111100000011000;  // JUMP -7 16                       
+    ukernel_spmm_[7]=0b01000000100000001000000000000000;  // MOV(AAM0) BANK GRF_B            
+    ukernel_spmm_[8]=0b00010000000001000100100000001111;  // JUMP -1 7                       
+    ukernel_spmm_[9]=0b00100000000000000000000000000000;  // EXIT
 
     // no BGA
     // ukernel_spmm_[0]=0b01000010000000001000000000000000;  // MOV(AAM0) GRF_A BANK
@@ -313,6 +312,7 @@ void SpmmTransactionGenerator::Execute() {
         Address addr(ch, 0, 0, 0, MAP_PIM_OP_MODE, 0); // MAP_PIM_OP_MODE = 0x3ffd
         uint64_t hex_addr = ReverseAddressMapping(addr);
         TryAddTransaction(hex_addr, true, data_temp_);
+        total_n_rows[ch] = 0; // initialize counts
     }
     Barrier();
     #ifdef debug_mode
@@ -326,10 +326,11 @@ void SpmmTransactionGenerator::Execute() {
         for (int ro = 0; ro < n_rows; ro++) {
         // for (int ch = 0; ch < NUM_CHANNEL; ch++) {
             int rd_index = 0;
-            int n_rows_per_rd = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].n_rd : B2_data_[ch * 4 + 0][ro].n_rd;
+            int n_rds_per_row = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].n_rd : B2_data_[ch * 4 + 0][ro].n_rd;
+            total_n_rows[ch] += n_rds_per_row;
             // ukernel iteration per row buffer
             // int n_chunk_per_row_buffer = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].n_chunk : B2_data_[ch * 4 + 0][ro].n_chunk;
-            accum_rds = (n_rows_per_rd > 16) ? accum_rds += (n_rows_per_rd - 16) : accum_rds; // 16개 초과하는 RD가 있으면 누적
+            accum_rds = (n_rds_per_row > 16) ? accum_rds += (n_rds_per_row - 16) : accum_rds; // 16개 초과하는 RD가 있으면 누적
             int ad_iter = 1;
             if (accum_rds > 16) {
                 ad_iter += 1;
@@ -337,20 +338,22 @@ void SpmmTransactionGenerator::Execute() {
             }
             for (int ad = 0; ad < ad_iter; ad++ ) {
                 for (int j = 0; j < 16; j++) { // JUMP 16번 반복 (j = 0 to 15)
-                    int loop = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].row_count[rd_index] : B2_data_[ch * 4 + 0][ro].row_count[rd_index];
-                    if (loop == 0 || ad > 0) loop = 1;
-                    rd_index++;
                     // MOV(AAM0) GRF_A EVEN_BANK
                     int co = 0;
                     Address addr(ch, 0, 0, EVEN_BANK, ro, co); 
                     uint64_t hex_addr = ReverseAddressMapping(addr);
                     TryAddTransaction(addr_B0_ + hex_addr, false, data_temp_);
-                    // Execute ukernel 0 MOV(AAM0) SRF_M GRF_A
-                    // AAM(0) 및 col=0으로 트리거
-                    Address addr_0(ch, 0, 0, EVEN_BANK, ro, co); 
-                    uint64_t hex_addr_0 = ReverseAddressMapping(addr_0);
-                    TryAddTransaction(addr_B0_ + hex_addr_0, false, data_temp_);
+
+                    // Determine loop count
+                    int loop = (int) max_b0 ? B0_data_[ch * 4 + 0][ro].row_count[rd_index] : B2_data_[ch * 4 + 0][ro].row_count[rd_index];
+                    if (loop == 0 || ad > 0) loop = 1;
+                    rd_index++;
                     for (int k = 0; k < loop; k++) { // loop
+                        // Execute ukernel 0 MOV(AAM0) SRF_M GRF_A
+                        // AAM(0) 및 col=0으로 트리거
+                        Address addr_0(ch, 0, 0, EVEN_BANK, ro, co); 
+                        uint64_t hex_addr_0 = ReverseAddressMapping(addr_0);
+                        TryAddTransaction(addr_B0_ + hex_addr_0, false, data_temp_);
                         // ukernel[1]: MUL_DRF(AAM0) GRF_B DRF SRF_M
                         // GRF_A[24] -> DRF Index, SRF_M[0] * DRF[idx] -> GRF_B[j]
                         // AAM(0), col=1, dst=GRF_B[j] (j는 JUMP 루프 카운터)
@@ -372,11 +375,7 @@ void SpmmTransactionGenerator::Execute() {
                     Address addr_4(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
                     TryAddTransaction(ReverseAddressMapping(addr_4), false, data_temp_);
                     
-                    // ukernel[5]: SACC(AAM0) GRF_B GRF_B
-                    Address addr_5(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
-                    TryAddTransaction(ReverseAddressMapping(addr_5), false, data_temp_);
-                    
-                    // ukernel[6]: JUMP -6 7 (PIM 유닛이 내부적으로 PPC를 1로 돌림)
+                    // ukernel[6]: JUMP -6 16 (PIM 유닛이 내부적으로 PPC를 1로 돌림)
                     Address addr_6(ch, 0, 0, EVEN_BANK, ro, j * 1); // col=j
                     TryAddTransaction(ReverseAddressMapping(addr_6), false, data_temp_);
                 } // end jump
@@ -406,9 +405,33 @@ void SpmmTransactionGenerator::Execute() {
 }
 void SpmmTransactionGenerator::GetResult() {
     // no need to change mode for write to bank
+    // SB mode change 후, logic die로 partial data 전송
+    #ifdef debug_mode
+    std::cout << "HOST:\t[4] AB -> SB \n";
+    #endif
+    for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+        Address addr(ch, 0, 0, 0, MAP_SBMR, 0);
+        uint64_t hex_addr = ReverseAddressMapping(addr);
+        TryAddTransaction(hex_addr, false, data_temp_);
+    }
+    Barrier();
+    *data_temp_ |= 1;
 
-    // To print accumulation count
-    // memory_system_.PrintAccumulateCount();
+    for (int ch = 0; ch < NUM_CHANNEL; ch++) {
+        for (int ro = 0; ro < total_n_rows[ch]/32; ++ro) { // 1kb 당 32 x 16
+            for (int co = 0; co < 32; co++) {
+                Address addr(ch, 0, 0, ODD_BANK, ro, co); // ODD_BANK에 저장된 결과
+                uint64_t hex_addr = ReverseAddressMapping(addr);
+                TryAddTransaction(hex_addr, false, data_temp_);
+            }
+        }
+        for (int co = 0; co < 32; co++) {   
+            Address addr(ch, 0, 0, ODD_BANK, 0, co); // 최종 write
+            uint64_t hex_addr = ReverseAddressMapping(addr);
+            TryAddTransaction(hex_addr, true, data_temp_);
+        }
+    }
+
 }
 void SpmmTransactionGenerator::AdditionalAccumulation(){}
 
@@ -655,7 +678,8 @@ void SpmvTransactionGenerator::Execute() {
         // Execute ukernel 1-4 (MUL, SACC, SACC, JUMP 명령어)
         // (TODO) 다음과 같이 동작하도록 구성해야 됨
         uint64_t sacc_offset = 7;
-        for (uint64_t co = 1; co < 8; co++) {
+        for (uint64_t co = 0; co < 16; co++) { // JH modify
+        // for (uint64_t co = 1; co < 8; co++) {
             for (int ch = 0; ch < NUM_CHANNEL; ch++) {
                 //channel, rank, bankgroup, bank, row, column
                 Address addr(ch, 0, 0, EVEN_BANK, ro, co);
@@ -683,7 +707,8 @@ void SpmvTransactionGenerator::Execute() {
         // (TODO) MOV(AAM0) BANK GRF_A를 추가해야 됨
         // JUMP 로 MOV가 7번 수행 될 수 있게 JUMP -1 6로 설정
         // column = 22 ~ 28
-        for(uint64_t co = 22; co < 29; co++){
+        // for(uint64_t co = 22; co < 29; co++){
+        for(uint64_t co = 0; co < 16; co++){ // JH modify
             for(int ch = 0; ch < NUM_CHANNEL; ch++){
                 Address addr(ch, 0, 0, EVEN_BANK, false, co);
                 uint64_t hex_addr = ReverseAddressMapping(addr);
@@ -724,7 +749,8 @@ void SpmvTransactionGenerator::Execute() {
         // Execute ukernel 1-4 (MUL, SACC, SACC, JUMP 명령어)
         // (TODO) 다음과 같이 동작하도록 구성해야 됨
         sacc_offset = 7;
-        for (uint64_t co = 1; co < 8; co++) {
+        // for (uint64_t co = 1; co < 8; co++) { 
+        for (uint64_t co = 0; co < 16; co++) { // JH modify
             for (int ch = 0; ch < NUM_CHANNEL; ch++) {
                 //channel, rank, bankgroup, bank, row, column
                 Address addr(ch, 0, 0, ODD_BANK, ro, co);
@@ -753,7 +779,8 @@ void SpmvTransactionGenerator::Execute() {
         // (TODO) MOV(AAM0) BANK GRF_A를 추가해야 됨
         // JUMP 로 MOV가 7번 수행 될 수 있게 JUMP -1 6로 설정
         // column = 22 ~ 28
-        for(uint64_t co = 22; co < 29; co++){
+        // for(uint64_t co = 22; co < 29; co++){
+        for(uint64_t co = 0; co < 16; co++){ // JH modify
             for(int ch = 0; ch < NUM_CHANNEL; ch++){
                 Address addr(ch, 0, 0, ODD_BANK, false, co);
                 uint64_t hex_addr = ReverseAddressMapping(addr);
@@ -821,13 +848,20 @@ void SpmvTransactionGenerator::GetResult() {
                 ro++;        // Increment row after each full cycle of ba
             }
             // 위에 ro, bg, bg, ba, ch 까지 정의
-            for (uint64_t co = 8; co <= 21; co++) {
-                Address addr(ch, 0, bg, ba, ro, co);
-                uint64_t hex_addr = ReverseAddressMapping(addr);
-                TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_index_);
-                //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
-            }
-            for (uint64_t co = 22; co < 29; co++) {
+            // for (uint64_t co = 8; co <= 21; co++) {
+            //     Address addr(ch, 0, bg, ba, ro, co);
+            //     uint64_t hex_addr = ReverseAddressMapping(addr);
+            //     TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_index_);
+            //     //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+            // }
+            // for (uint64_t co = 22; co < 29; co++) {
+            //     Address addr(ch, 0, bg, ba, ro, co);
+            //     uint64_t hex_addr = ReverseAddressMapping(addr);
+            //     TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_value_);
+            //     //TryAddTransaction(addr_DRAF_ + hex_addr, false, data_temp_);
+            // }
+            // JH modify
+            for (uint64_t co = 0; co < 16; co++) {
                 Address addr(ch, 0, bg, ba, ro, co);
                 uint64_t hex_addr = ReverseAddressMapping(addr);
                 TryAddTransaction(addr_DRAF_ + hex_addr, false, partial_value_);

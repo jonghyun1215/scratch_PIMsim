@@ -35,7 +35,7 @@ for filename in summary_files:
         matrix_name_match = re.search(r"Matrix:\s*(\S+)", content)
         setdata_match = re.search(r"SetData \((\d+) cycles\)", content)
         execute_match = re.search(r"Execute \((\d+) cycles\)", content)
-        # getresult_match = re.search(r"GetResult \((\d+) cycles\)", content)
+        getresult_match = re.search(r"GetResult \((\d+) cycles\)", content)
         
         # 모든 정보가 성공적으로 추출되었는지 확인
         # if matrix_name_match and execute_match and getresult_match:
@@ -43,16 +43,16 @@ for filename in summary_files:
             matrix_name = matrix_name_match.group(1)
             setdata_cycles = int(setdata_match.group(1))
             execute_cycles = int(execute_match.group(1))
-            # getresult_cycles = int(getresult_match.group(1))
+            getresult_cycles = int(getresult_match.group(1))
             
             # 두 사이클 값을 더합니다.
             # total_cycles = execute_cycles + getresult_cycles
             
             # 결과를 리스트에 추가
             # results.append(f"{matrix_name}, {execute_cycles}, {getresult_cycles}, {total_cycles}")
-            processed_data[matrix_name] = f"{matrix_name}, {setdata_cycles}, {execute_cycles}, {setdata_cycles + execute_cycles}"
+            processed_data[matrix_name] = f"{matrix_name}, {setdata_cycles}, {execute_cycles}, {getresult_cycles}"
             # print(f"{matrix_name}: {total_cycles} cycles (Execute: {execute_cycles}, GetResult: {getresult_cycles})")
-            print(f"{matrix_name}: {setdata_cycles + execute_cycles} cycles (SetData: {setdata_cycles}, Execute: {execute_cycles})")
+            print(f"{matrix_name}: (SetData: {setdata_cycles}, Execute: {execute_cycles}, GetResult: {getresult_cycles})")
         else:
             print(f"'{filename}' data not found.")
 
@@ -70,7 +70,7 @@ for name in desired_order:
 if final_results: # final_results 리스트에 데이터가 있는지 확인
     try:
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write("matrix_name, setdata_cycles, execute_cycles, total_cycles\n")
+            f.write("matrix_name, setdata_cycles, execute_cycles, getresult_cycles\n")
             
             # results 리스트 대신 final_results 리스트의 내용을 씀
             for line in final_results:

@@ -26,7 +26,7 @@ hardware/
 scripts/summary/
 scripts/dramsim3.json
 scripts/dramsim3.txt
-scriptssummary.txt
+scripts/*.txt
 
 # Compiled Object files
 *.slo

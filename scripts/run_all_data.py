@@ -37,7 +37,7 @@ data_names = [
 output_folder = "./log"
 for data_name in data_names:
     # 실행할 커맨드를 생성합니다. f-string을 사용하여 data_name을 동적으로 삽입합니다.
-    command = f"../build/pimdramsim3main ../configs/HBM2_4Gb_test.ini --pim-api=spmm -m {data_name} -w > {output_folder}/{data_name}.log"
+    command = f"../build/pimdramsim3main ../configs/HBM2_4Gb_test.ini --pim-api=spmv -m {data_name} -w > {output_folder}/{data_name}.log"
 
     # 생성된 커맨드를 화면에 출력합니다 (확인용).
     print(f"Executing command: {command}")

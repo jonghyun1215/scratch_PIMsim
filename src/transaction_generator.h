@@ -248,6 +248,7 @@ class SpmmTransactionGenerator : public TransactionGenerator {
     uint32_t min_kernel_execution_time_;
     bool max_b0;
     int max_index;
+    int total_n_rows[NUM_CHANNEL];
     uint64_t addr_B0_, addr_B2_, addr_output_matrix_;
     uint64_t ukernel_access_size_;
     uint64_t ukernel_count_per_pim_;
